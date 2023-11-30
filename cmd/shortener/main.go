@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -51,6 +53,7 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func generateShortURL(url string) string {
-	// Для простоты в этом примере просто возвращаем первые 8 символов оригинального URL.
-	return url[:8]
+	hash := sha256.Sum256([]byte(url))
+	encoded := base64.URLEncoding.EncodeToString(hash[:])
+	return encoded[:8]
 }
