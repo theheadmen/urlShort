@@ -7,24 +7,22 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
+
+	"github.com/go-chi/chi"
 )
 
 var urlMap = make(map[string]string)
 
 func main() {
-	http.HandleFunc("/", handler)
-	http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(":8080", makeChiServ())
 }
 
-func handler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "POST":
-		postHandler(w, r)
-	case "GET":
-		getHandler(w, r)
-	default:
-		w.WriteHeader(http.StatusBadRequest)
-	}
+func makeChiServ() chi.Router {
+	r := chi.NewRouter()
+	r.Get("/", getHandler)
+	r.Get("/{shortUrl}", getHandler)
+	r.Post("/", postHandler)
+	return r
 }
 
 func postHandler(w http.ResponseWriter, r *http.Request) {

@@ -2,7 +2,10 @@ module github.com/theheadmen/urlShort
 
 go 1.21.1
 
-require github.com/stretchr/testify v1.8.4
+require (
+	github.com/go-chi/chi v1.5.5
+	github.com/stretchr/testify v1.8.4
+)
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
