@@ -14,7 +14,8 @@ import (
 var urlMap = make(map[string]string)
 
 func main() {
-	http.ListenAndServe(":8080", makeChiServ())
+	parseFlags()
+	http.ListenAndServe(flagRunAddr, makeChiServ())
 }
 
 func makeChiServ() chi.Router {
@@ -36,7 +37,14 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	urlMap[shortURL] = url
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)
-	fmt.Fprintf(w, "http://localhost:8080/%s", shortURL)
+	servShortUrl := ""
+	// так как в тестах мы не используем флаги, нужно обезопасить себя
+	if flagShortRunAddr == "" {
+		servShortUrl = "http://localhost:8080"
+	} else {
+		servShortUrl = flagShortRunAddr
+	}
+	fmt.Fprintf(w, servShortUrl+"/%s", shortURL)
 }
 
 func getHandler(w http.ResponseWriter, r *http.Request) {
