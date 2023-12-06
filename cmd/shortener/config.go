@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"os"
 )
 
 // неэкспортированная переменная flagRunAddr содержит адрес и порт для запуска сервера
@@ -17,4 +18,12 @@ func parseFlags() {
 	flag.StringVar(&flagShortRunAddr, "b", "http://localhost:8080", "address and port to return short url")
 	// парсим переданные серверу аргументы в зарегистрированные переменные
 	flag.Parse()
+
+	if envRunAddr := os.Getenv("SERVER_ADDRESS"); envRunAddr != "" {
+		flagRunAddr = envRunAddr
+	}
+
+	if envShortRunAddr := os.Getenv("BASE_URL"); envShortRunAddr != "" {
+		flagShortRunAddr = envShortRunAddr
+	}
 }
