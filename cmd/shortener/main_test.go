@@ -49,6 +49,7 @@ func TestSimpleHandler(t *testing.T) {
 		t.Run(tc.method, func(t *testing.T) {
 			testValue := strings.NewReader(tc.testValue)
 			resp, get := testRequest(t, ts, tc.method, "/"+tc.testURL, testValue)
+			defer resp.Body.Close()
 
 			assert.Equal(t, tc.expectedCode, resp.StatusCode, "Код ответа не совпадает с ожидаемым")
 			if tc.expectedBody != "" {

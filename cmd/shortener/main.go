@@ -50,9 +50,9 @@ func (dataStore *ServerDataStore) postHandler(w http.ResponseWriter, r *http.Req
 	url := string(body)
 	shortURL := generateShortURL(url)
 
-	dataStore.mu.Lock()
+	//dataStore.mu.Lock()
 	dataStore.urlMap[shortURL] = url
-	dataStore.mu.Unlock()
+	//dataStore.mu.Unlock()
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)
@@ -67,9 +67,9 @@ func (dataStore *ServerDataStore) postHandler(w http.ResponseWriter, r *http.Req
 func (dataStore *ServerDataStore) getHandler(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/")
 
-	dataStore.mu.RLock()
+	//dataStore.mu.RLock()
 	originalURL, ok := dataStore.urlMap[id]
-	dataStore.mu.RUnlock()
+	//dataStore.mu.RUnlock()
 
 	if !ok {
 		w.WriteHeader(http.StatusBadRequest)
