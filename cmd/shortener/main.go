@@ -4,52 +4,73 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/go-chi/chi"
 )
 
-var urlMap = make(map[string]string)
+type ServerDataStore struct {
+	urlMap map[string]string
+	mu     sync.RWMutex
+}
+
+func NewServerDataStore() *ServerDataStore {
+	return &ServerDataStore{
+		urlMap: make(map[string]string),
+		mu:     sync.RWMutex{},
+	}
+}
 
 func main() {
 	parseFlags()
-	http.ListenAndServe(flagRunAddr, makeChiServ())
+	err := http.ListenAndServe(flagRunAddr, makeChiServ())
+	if err != nil {
+		panic(err)
+	}
 }
 
 func makeChiServ() chi.Router {
-	r := chi.NewRouter()
-	r.Get("/", getHandler)
-	r.Get("/{shortUrl}", getHandler)
-	r.Post("/", postHandler)
-	return r
+	dataStore := NewServerDataStore()
+	router := chi.NewRouter()
+	router.Get("/", dataStore.getHandler)
+	router.Get("/{shortUrl}", dataStore.getHandler)
+	router.Post("/", dataStore.postHandler)
+	return router
 }
 
-func postHandler(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
+func (dataStore *ServerDataStore) postHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	url := string(body)
 	shortURL := generateShortURL(url)
-	urlMap[shortURL] = url
+
+	dataStore.mu.Lock()
+	dataStore.urlMap[shortURL] = url
+	dataStore.mu.Unlock()
+
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)
-	servShortUrl := ""
+	servShortURL := ""
 	// так как в тестах мы не используем флаги, нужно обезопасить себя
 	if flagShortRunAddr == "" {
-		servShortUrl = "http://localhost:8080"
-	} else {
-		servShortUrl = flagShortRunAddr
+		servShortURL = "http://localhost:8080"
 	}
-	fmt.Fprintf(w, servShortUrl+"/%s", shortURL)
+	fmt.Fprintf(w, servShortURL+"/%s", shortURL)
 }
 
-func getHandler(w http.ResponseWriter, r *http.Request) {
+func (dataStore *ServerDataStore) getHandler(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/")
-	originalURL, ok := urlMap[id]
+
+	dataStore.mu.RLock()
+	originalURL, ok := dataStore.urlMap[id]
+	dataStore.mu.RUnlock()
+
 	if !ok {
 		w.WriteHeader(http.StatusBadRequest)
 		return

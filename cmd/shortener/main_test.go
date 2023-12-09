@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testRequest(t *testing.T, ts *httptest.Server, method, path string, body io.Reader) (*http.Response, string) {
-	req, err := http.NewRequest(method, ts.URL+path, body)
+func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyValue io.Reader) (*http.Response, string) {
+	req, err := http.NewRequest(method, ts.URL+path, bodyValue)
 	require.NoError(t, err)
 
 	resp, err := ts.Client().Do(req)
@@ -32,23 +32,23 @@ func TestSimpleHandler(t *testing.T) {
 	testCases := []struct {
 		method       string
 		testValue    string
-		testUrl      string
+		testURL      string
 		expectedCode int
 		expectedBody string
 	}{
-		{method: http.MethodGet, testValue: "", testUrl: "", expectedCode: http.StatusBadRequest, expectedBody: ""},
-		{method: http.MethodGet, testValue: "", testUrl: "1MnZAnMm", expectedCode: http.StatusBadRequest, expectedBody: ""},
-		{method: http.MethodPut, testValue: "", testUrl: "", expectedCode: http.StatusMethodNotAllowed, expectedBody: ""},
-		{method: http.MethodDelete, testValue: "", testUrl: "", expectedCode: http.StatusMethodNotAllowed, expectedBody: ""},
-		{method: http.MethodPost, testValue: "", testUrl: "", expectedCode: http.StatusCreated, expectedBody: "http://localhost:8080/47DEQpj8"},
-		{method: http.MethodPost, testValue: "google.com", testUrl: "", expectedCode: http.StatusCreated, expectedBody: "http://localhost:8080/1MnZAnMm"},
-		{method: http.MethodPost, testValue: "yandex.ru", testUrl: "", expectedCode: http.StatusCreated, expectedBody: "http://localhost:8080/eeILJFID"},
+		{method: http.MethodGet, testValue: "", testURL: "", expectedCode: http.StatusBadRequest, expectedBody: ""},
+		{method: http.MethodGet, testValue: "", testURL: "1MnZAnMm", expectedCode: http.StatusBadRequest, expectedBody: ""},
+		{method: http.MethodPut, testValue: "", testURL: "", expectedCode: http.StatusMethodNotAllowed, expectedBody: ""},
+		{method: http.MethodDelete, testValue: "", testURL: "", expectedCode: http.StatusMethodNotAllowed, expectedBody: ""},
+		{method: http.MethodPost, testValue: "", testURL: "", expectedCode: http.StatusCreated, expectedBody: "http://localhost:8080/47DEQpj8"},
+		{method: http.MethodPost, testValue: "google.com", testURL: "", expectedCode: http.StatusCreated, expectedBody: "http://localhost:8080/1MnZAnMm"},
+		{method: http.MethodPost, testValue: "yandex.ru", testURL: "", expectedCode: http.StatusCreated, expectedBody: "http://localhost:8080/eeILJFID"},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.method, func(t *testing.T) {
-			body := strings.NewReader(tc.testValue)
-			resp, get := testRequest(t, ts, tc.method, "/"+tc.testUrl, body)
+			testValue := strings.NewReader(tc.testValue)
+			resp, get := testRequest(t, ts, tc.method, "/"+tc.testURL, testValue)
 
 			assert.Equal(t, tc.expectedCode, resp.StatusCode, "Код ответа не совпадает с ожидаемым")
 			if tc.expectedBody != "" {
@@ -60,30 +60,31 @@ func TestSimpleHandler(t *testing.T) {
 
 func TestSequenceHandler(t *testing.T) {
 	testCases := []struct {
-		testUrl          string
-		expectedShortUrl string
+		testURL          string
+		expectedShortURL string
 		returnCode       int
 	}{
-		{testUrl: "google.com", expectedShortUrl: "1MnZAnMm", returnCode: http.StatusTemporaryRedirect},
-		{testUrl: "google.com", expectedShortUrl: "1MnZm", returnCode: http.StatusBadRequest},
-		{testUrl: "yandex.ru", expectedShortUrl: "eeILJFID", returnCode: http.StatusTemporaryRedirect},
-		{testUrl: "yandex.ru", expectedShortUrl: "eeFID", returnCode: http.StatusBadRequest},
+		{testURL: "google.com", expectedShortURL: "1MnZAnMm", returnCode: http.StatusTemporaryRedirect},
+		{testURL: "google.com", expectedShortURL: "1MnZm", returnCode: http.StatusBadRequest},
+		{testURL: "yandex.ru", expectedShortURL: "eeILJFID", returnCode: http.StatusTemporaryRedirect},
+		{testURL: "yandex.ru", expectedShortURL: "eeFID", returnCode: http.StatusBadRequest},
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.testUrl, func(t *testing.T) {
+		t.Run(tc.testURL, func(t *testing.T) {
+			dataStore := NewServerDataStore()
 			// тестим последовательно пост + гет запросы
-			body := strings.NewReader(tc.testUrl)
+			body := strings.NewReader(tc.testURL)
 			req1 := httptest.NewRequest("POST", "/", body)
 
-			req2 := httptest.NewRequest("GET", "/"+tc.expectedShortUrl, nil)
+			req2 := httptest.NewRequest("GET", "/"+tc.expectedShortURL, nil)
 
 			// для этого используем два рекордера, по одному для каждого запроса
 			recorder1 := httptest.NewRecorder()
 			recorder2 := httptest.NewRecorder()
-			handlerFunc := http.HandlerFunc(postHandler)
+			handlerFunc := http.HandlerFunc(dataStore.postHandler)
 			handlerFunc.ServeHTTP(recorder1, req1)
-			handlerFunc2 := http.HandlerFunc(getHandler)
+			handlerFunc2 := http.HandlerFunc(dataStore.getHandler)
 			handlerFunc2.ServeHTTP(recorder2, req2)
 
 			// сначала проверка что post сработал
@@ -96,9 +97,9 @@ func TestSequenceHandler(t *testing.T) {
 					t.Errorf("обработчик вернул неверный код состояния: получили %v хотели %v", status, tc.returnCode)
 				}
 
-				location := recorder2.HeaderMap.Get("Location")
-				if location != tc.testUrl {
-					t.Errorf("обработчик вернул неожиданный заголовок Location: получили %v хотели %v", location, tc.testUrl)
+				location := recorder2.Header().Get("Location")
+				if location != tc.testURL {
+					t.Errorf("обработчик вернул неожиданный заголовок Location: получили %v хотели %v", location, tc.testURL)
 				}
 			} else { // или проверяем что на неверный код будет ошибка
 				if status := recorder2.Code; status != tc.returnCode {
