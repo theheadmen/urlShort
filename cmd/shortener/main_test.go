@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	config "github.com/theheadmen/urlShort/cmd/serverconfig"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -26,7 +28,8 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyVal
 }
 
 func TestSimpleHandler(t *testing.T) {
-	ts := httptest.NewServer(makeChiServ())
+	configStore := config.NewConfigStore()
+	ts := httptest.NewServer(makeChiServ(configStore))
 	defer ts.Close()
 
 	testCases := []struct {
@@ -60,6 +63,7 @@ func TestSimpleHandler(t *testing.T) {
 }
 
 func TestSequenceHandler(t *testing.T) {
+	configStore := config.NewConfigStore()
 	testCases := []struct {
 		testURL          string
 		expectedShortURL string
@@ -73,7 +77,7 @@ func TestSequenceHandler(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.testURL, func(t *testing.T) {
-			dataStore := NewServerDataStore()
+			dataStore := NewServerDataStore(configStore)
 			// тестим последовательно пост + гет запросы
 			body := strings.NewReader(tc.testURL)
 			req1 := httptest.NewRequest("POST", "/", body)

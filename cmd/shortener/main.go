@@ -9,31 +9,37 @@ import (
 	"strings"
 	"sync"
 
+	config "github.com/theheadmen/urlShort/cmd/serverconfig"
+
 	"github.com/go-chi/chi"
 )
 
 type ServerDataStore struct {
-	urlMap map[string]string
-	mu     sync.RWMutex
+	urlMap      map[string]string
+	mu          sync.RWMutex
+	configStore config.ConfigStore
 }
 
-func NewServerDataStore() *ServerDataStore {
+func NewServerDataStore(configStore *config.ConfigStore) *ServerDataStore {
 	return &ServerDataStore{
-		urlMap: make(map[string]string),
-		mu:     sync.RWMutex{},
+		urlMap:      make(map[string]string),
+		mu:          sync.RWMutex{},
+		configStore: *configStore,
 	}
 }
 
 func main() {
-	parseFlags()
-	err := http.ListenAndServe(flagRunAddr, makeChiServ())
+	configStore := config.NewConfigStore()
+	configStore.ParseFlags()
+
+	err := http.ListenAndServe(configStore.FlagRunAddr, makeChiServ(configStore))
 	if err != nil {
 		panic(err)
 	}
 }
 
-func makeChiServ() chi.Router {
-	dataStore := NewServerDataStore()
+func makeChiServ(configStore *config.ConfigStore) chi.Router {
+	dataStore := NewServerDataStore(configStore)
 	router := chi.NewRouter()
 	router.Get("/", dataStore.getHandler)
 	router.Get("/{shortUrl}", dataStore.getHandler)
@@ -58,10 +64,10 @@ func (dataStore *ServerDataStore) postHandler(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusCreated)
 	servShortURL := ""
 	// так как в тестах мы не используем флаги, нужно обезопасить себя
-	if flagShortRunAddr == "" {
+	if dataStore.configStore.FlagShortRunAddr == "" {
 		servShortURL = "http://localhost:8080"
 	} else {
-		servShortURL = flagShortRunAddr
+		servShortURL = dataStore.configStore.FlagShortRunAddr
 	}
 	fmt.Fprintf(w, servShortURL+"/%s", shortURL)
 }
