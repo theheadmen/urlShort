@@ -8,10 +8,14 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/theheadmen/urlShort/cmd/logger"
 	config "github.com/theheadmen/urlShort/cmd/serverconfig"
+	"go.uber.org/zap"
 
 	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 )
 
 type ServerDataStore struct {
@@ -32,8 +36,14 @@ func main() {
 	configStore := config.NewConfigStore()
 	configStore.ParseFlags()
 
+	if err := logger.Initialize(configStore.FlagLogLevel); err != nil {
+		panic(err)
+	}
+	logger.Log.Info("Running server", zap.String("address", configStore.FlagRunAddr))
+
 	err := http.ListenAndServe(configStore.FlagRunAddr, makeChiServ(configStore))
 	if err != nil {
+		logger.Log.Fatal("Server is down", zap.String("address", err.Error()))
 		panic(err)
 	}
 }
@@ -41,6 +51,23 @@ func main() {
 func makeChiServ(configStore *config.ConfigStore) chi.Router {
 	dataStore := NewServerDataStore(configStore)
 	router := chi.NewRouter()
+
+	// Add the logger middleware
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			next.ServeHTTP(ww, r)
+			logger.Log.Info("Request processed",
+				zap.String("method", r.Method),
+				zap.String("uri", r.RequestURI),
+				zap.Duration("duration", time.Since(start)),
+				zap.Int("status", ww.Status()),
+				zap.Int("size", ww.BytesWritten()),
+			)
+		})
+	})
+
 	router.Get("/", dataStore.getHandler)
 	router.Get("/{shortUrl}", dataStore.getHandler)
 	router.Post("/", dataStore.postHandler)
