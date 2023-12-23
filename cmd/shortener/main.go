@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/theheadmen/urlShort/cmd/logger"
+	"github.com/theheadmen/urlShort/cmd/models"
 	config "github.com/theheadmen/urlShort/cmd/serverconfig"
 	"go.uber.org/zap"
 
@@ -71,6 +73,7 @@ func makeChiServ(configStore *config.ConfigStore) chi.Router {
 	router.Get("/", dataStore.getHandler)
 	router.Get("/{shortUrl}", dataStore.getHandler)
 	router.Post("/", dataStore.postHandler)
+	router.Post("/api/shorten", dataStore.postJsonHandler)
 	return router
 }
 
@@ -97,6 +100,49 @@ func (dataStore *ServerDataStore) postHandler(w http.ResponseWriter, r *http.Req
 		servShortURL = dataStore.configStore.FlagShortRunAddr
 	}
 	fmt.Fprintf(w, servShortURL+"/%s", shortURL)
+}
+
+func (dataStore *ServerDataStore) postJsonHandler(w http.ResponseWriter, r *http.Request) {
+	var req models.Request
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&req); err != nil {
+		logger.Log.Debug("cannot decode request JSON body", zap.Error(err))
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		return
+	}
+
+	if req.Url == "" {
+		logger.Log.Debug("after decoding JSON we don't have any URL")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		return
+	}
+
+	shortURL := generateShortURL(req.Url)
+
+	dataStore.mu.Lock()
+	dataStore.urlMap[shortURL] = req.Url
+	dataStore.mu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	servShortURL := ""
+	// так как в тестах мы не используем флаги, нужно обезопасить себя
+	if dataStore.configStore.FlagShortRunAddr == "" {
+		servShortURL = "http://localhost:8080"
+	} else {
+		servShortURL = dataStore.configStore.FlagShortRunAddr
+	}
+
+	// заполняем модель ответа
+	resp := models.Response{
+		Result: servShortURL + "/" + shortURL,
+	}
+
+	enc := json.NewEncoder(w)
+	if err := enc.Encode(resp); err != nil {
+		logger.Log.Debug("error encoding response", zap.Error(err))
+		return
+	}
 }
 
 func (dataStore *ServerDataStore) getHandler(w http.ResponseWriter, r *http.Request) {

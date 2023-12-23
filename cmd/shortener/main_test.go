@@ -62,6 +62,79 @@ func TestSimpleHandler(t *testing.T) {
 	}
 }
 
+func TestJsonPost(t *testing.T) {
+	configStore := config.NewConfigStore()
+	ts := httptest.NewServer(makeChiServ(configStore))
+	defer ts.Close()
+
+	testCases := []struct {
+		name         string // добавляем название тестов
+		method       string
+		body         string // добавляем тело запроса в табличные тесты
+		expectedCode int
+		expectedBody string
+	}{
+		{
+			name:         "method_get",
+			method:       http.MethodGet,
+			expectedCode: http.StatusMethodNotAllowed,
+			expectedBody: "",
+		},
+		{
+			name:         "method_put",
+			method:       http.MethodPut,
+			expectedCode: http.StatusMethodNotAllowed,
+			expectedBody: "",
+		},
+		{
+			name:         "method_delete",
+			method:       http.MethodDelete,
+			expectedCode: http.StatusMethodNotAllowed,
+			expectedBody: "",
+		},
+		{
+			name:         "method_post_without_body",
+			method:       http.MethodPost,
+			expectedCode: http.StatusUnprocessableEntity,
+			expectedBody: "",
+		},
+		{
+			name:         "method_post_unsupported_type",
+			method:       http.MethodPost,
+			body:         `{"request": {"type": "idunno", "command": "do something"}, "version": "1.0"}`,
+			expectedCode: http.StatusUnprocessableEntity,
+			expectedBody: "",
+		},
+		{
+			name:         "method_post_success",
+			method:       http.MethodPost,
+			body:         `{"url": "google.com"}`,
+			expectedCode: http.StatusCreated,
+			expectedBody: `{"result":"http://localhost:8080/1MnZAnMm"}`,
+		}, {
+			name:         "method_post_success",
+			method:       http.MethodPost,
+			body:         `{"url": "yandex.ru"}`,
+			expectedCode: http.StatusCreated,
+			expectedBody: `{"result":"http://localhost:8080/eeILJFID"}`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.method, func(t *testing.T) {
+			testValue := strings.NewReader(tc.body)
+			resp, get := testRequest(t, ts, tc.method, "/api/shorten", testValue)
+			get = strings.TrimSuffix(get, "\n")
+			defer resp.Body.Close()
+
+			assert.Equal(t, tc.expectedCode, resp.StatusCode, "Код ответа не совпадает с ожидаемым")
+			if tc.expectedBody != "" {
+				assert.Equal(t, tc.expectedBody, get, "Тело ответа не совпадает с ожидаемым")
+			}
+		})
+	}
+}
+
 func TestSequenceHandler(t *testing.T) {
 	configStore := config.NewConfigStore()
 	testCases := []struct {
