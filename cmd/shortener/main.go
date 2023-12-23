@@ -73,7 +73,7 @@ func makeChiServ(configStore *config.ConfigStore) chi.Router {
 	router.Get("/", dataStore.getHandler)
 	router.Get("/{shortUrl}", dataStore.getHandler)
 	router.Post("/", dataStore.postHandler)
-	router.Post("/api/shorten", dataStore.postJsonHandler)
+	router.Post("/api/shorten", dataStore.postJSONHandler)
 	return router
 }
 
@@ -102,7 +102,7 @@ func (dataStore *ServerDataStore) postHandler(w http.ResponseWriter, r *http.Req
 	fmt.Fprintf(w, servShortURL+"/%s", shortURL)
 }
 
-func (dataStore *ServerDataStore) postJsonHandler(w http.ResponseWriter, r *http.Request) {
+func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http.Request) {
 	var req models.Request
 	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(&req); err != nil {
@@ -111,16 +111,16 @@ func (dataStore *ServerDataStore) postJsonHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	if req.Url == "" {
+	if req.URL == "" {
 		logger.Log.Debug("after decoding JSON we don't have any URL")
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		return
 	}
 
-	shortURL := generateShortURL(req.Url)
+	shortURL := generateShortURL(req.URL)
 
 	dataStore.mu.Lock()
-	dataStore.urlMap[shortURL] = req.Url
+	dataStore.urlMap[shortURL] = req.URL
 	dataStore.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
