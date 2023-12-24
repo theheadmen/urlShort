@@ -1,16 +1,18 @@
 package main
 
 import (
+	"compress/gzip"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	config "github.com/theheadmen/urlShort/cmd/serverconfig"
-
+	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	config "github.com/theheadmen/urlShort/cmd/serverconfig"
 )
 
 func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyValue io.Reader) (*http.Response, string) {
@@ -21,10 +23,20 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyVal
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
+	if resp.Header.Get("Content-Encoding") == "gzip" {
+		gz, err := gzip.NewReader(resp.Body)
+		require.NoError(t, err)
 
-	return resp, string(respBody)
+		respBody, err := io.ReadAll(gz)
+		require.NoError(t, err)
+
+		return resp, string(respBody)
+	} else {
+		respBody, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		return resp, string(respBody)
+	}
 }
 
 func TestSimpleHandler(t *testing.T) {
@@ -124,7 +136,7 @@ func TestJsonPost(t *testing.T) {
 		t.Run(tc.method, func(t *testing.T) {
 			testValue := strings.NewReader(tc.body)
 			resp, get := testRequest(t, ts, tc.method, "/api/shorten", testValue)
-			get = strings.TrimSuffix(get, "\n")
+			get = strings.TrimSuffix(string(get), "\n")
 			defer resp.Body.Close()
 
 			assert.Equal(t, tc.expectedCode, resp.StatusCode, "Код ответа не совпадает с ожидаемым")
@@ -153,15 +165,17 @@ func TestSequenceHandler(t *testing.T) {
 			dataStore := NewServerDataStore(configStore)
 			// тестим последовательно пост + гет запросы
 			body := strings.NewReader(tc.testURL)
-			req1 := httptest.NewRequest("POST", "/", body)
 
+			req1 := httptest.NewRequest("POST", "/", body)
 			req2 := httptest.NewRequest("GET", "/"+tc.expectedShortURL, nil)
 
 			// для этого используем два рекордера, по одному для каждого запроса
 			recorder1 := httptest.NewRecorder()
 			recorder2 := httptest.NewRecorder()
+
 			handlerFunc := http.HandlerFunc(dataStore.postHandler)
 			handlerFunc.ServeHTTP(recorder1, req1)
+
 			handlerFunc2 := http.HandlerFunc(dataStore.getHandler)
 			handlerFunc2.ServeHTTP(recorder2, req2)
 
@@ -169,6 +183,7 @@ func TestSequenceHandler(t *testing.T) {
 			if status := recorder1.Code; status != http.StatusCreated {
 				t.Errorf("обработчик вернул неверный код состояния: получили %v хотели %v", status, http.StatusCreated)
 			}
+
 			// затем мы или проверяем что в Location
 			if tc.returnCode == http.StatusTemporaryRedirect {
 				if status := recorder2.Code; status != tc.returnCode {
@@ -220,4 +235,49 @@ func TestGenerateShortURL(t *testing.T) {
 			assert.Equal(t, generateShortURL(test.value), test.want)
 		})
 	}
+}
+
+func TestCompressResponse(t *testing.T) {
+	configStore := config.NewConfigStore()
+	dataStore := NewServerDataStore(configStore)
+	r := chi.NewRouter()
+
+	r.Use(middleware.Compress(5, "text/html", "application/json"))
+	r.Post("/", dataStore.postHandler)
+
+	t.Run("with Accept-Encoding", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/", strings.NewReader("google.com"))
+		req.Header.Set("Accept-Encoding", "gzip")
+		w := httptest.NewRecorder()
+
+		r.ServeHTTP(w, req)
+
+		resp := w.Result()
+		body, _ := io.ReadAll(resp.Body)
+
+		assert.Equal(t, "gzip", resp.Header.Get("Content-Encoding"), "Не тот тип кодирования контента")
+
+		gz, err := gzip.NewReader(strings.NewReader(string(body)))
+		require.NoError(t, err)
+		defer gz.Close()
+
+		decompressed, err := io.ReadAll(gz)
+		require.NoError(t, err)
+
+		assert.Equal(t, "http://localhost:8080/1MnZAnMm", string(decompressed), "Тело ответа не совпадает с ожидаемым")
+	})
+
+	t.Run("without Accept-Encoding", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/", strings.NewReader("google.com"))
+		w := httptest.NewRecorder()
+
+		r.ServeHTTP(w, req)
+
+		resp := w.Result()
+		body, _ := io.ReadAll(resp.Body)
+
+		assert.Equal(t, "", resp.Header.Get("Content-Encoding"), "Не тот тип кодирования контента")
+
+		assert.Equal(t, "http://localhost:8080/1MnZAnMm", string(body), "Тело ответа не совпадает с ожидаемым")
+	})
 }

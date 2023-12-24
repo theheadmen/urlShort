@@ -54,6 +54,8 @@ func makeChiServ(configStore *config.ConfigStore) chi.Router {
 	dataStore := NewServerDataStore(configStore)
 	router := chi.NewRouter()
 
+	// Add gzip middleware
+	router.Use(middleware.Compress(5, "text/html", "application/json"))
 	// Add the logger middleware
 	router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +92,7 @@ func (dataStore *ServerDataStore) postHandler(w http.ResponseWriter, r *http.Req
 	dataStore.urlMap[shortURL] = url
 	dataStore.mu.Unlock()
 
-	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Type", "text/html")
 	w.WriteHeader(http.StatusCreated)
 	servShortURL := ""
 	// так как в тестах мы не используем флаги, нужно обезопасить себя
@@ -124,6 +126,7 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 	dataStore.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
+	//w.Header().Set("Content-Encoding", "gzip")
 	w.WriteHeader(http.StatusCreated)
 	servShortURL := ""
 	// так как в тестах мы не используем флаги, нужно обезопасить себя
