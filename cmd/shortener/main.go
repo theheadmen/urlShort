@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -82,10 +83,27 @@ func makeChiServ(configStore *config.ConfigStore) chi.Router {
 func (dataStore *ServerDataStore) postHandler(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		logger.Log.Debug("cannot read request body", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	url := string(body)
+	if r.Header.Get("Content-Encoding") == "gzip" {
+		gz, err := gzip.NewReader(strings.NewReader(string(body)))
+		if err != nil {
+			logger.Log.Debug("cannot decompress request body", zap.Error(err))
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		decompressed, err := io.ReadAll(gz)
+		if err != nil {
+			logger.Log.Debug("cannot read decompressed request body", zap.Error(err))
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		url = string(decompressed)
+	}
+
 	shortURL := generateShortURL(url)
 
 	dataStore.mu.Lock()
@@ -160,6 +178,7 @@ func (dataStore *ServerDataStore) getHandler(w http.ResponseWriter, r *http.Requ
 	dataStore.mu.RUnlock()
 
 	if !ok {
+		logger.Log.Debug("cannot find url by id", zap.String("id", id))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
