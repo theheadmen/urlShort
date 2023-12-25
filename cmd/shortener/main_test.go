@@ -254,7 +254,7 @@ func TestCompressResponse(t *testing.T) {
 
 		resp := w.Result()
 		body, _ := io.ReadAll(resp.Body)
-
+		defer resp.Body.Close()
 		assert.Equal(t, "gzip", resp.Header.Get("Content-Encoding"), "Не тот тип кодирования контента")
 
 		gz, err := gzip.NewReader(strings.NewReader(string(body)))
@@ -275,6 +275,7 @@ func TestCompressResponse(t *testing.T) {
 
 		resp := w.Result()
 		body, _ := io.ReadAll(resp.Body)
+		defer resp.Body.Close()
 
 		assert.Equal(t, "", resp.Header.Get("Content-Encoding"), "Не тот тип кодирования контента")
 

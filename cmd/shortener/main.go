@@ -101,6 +101,9 @@ func (dataStore *ServerDataStore) postHandler(w http.ResponseWriter, r *http.Req
 	} else {
 		servShortURL = dataStore.configStore.FlagShortRunAddr
 	}
+
+	logger.Log.Info("After POST request", zap.String("body", url), zap.String("result", servShortURL+"/"+shortURL))
+
 	fmt.Fprintf(w, servShortURL+"/%s", shortURL)
 }
 
@@ -141,6 +144,8 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 		Result: servShortURL + "/" + shortURL,
 	}
 
+	logger.Log.Info("After POST JSON request", zap.String("body", req.URL), zap.String("result", servShortURL+"/"+shortURL))
+
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(resp); err != nil {
 		logger.Log.Debug("error encoding response", zap.Error(err))
@@ -159,6 +164,9 @@ func (dataStore *ServerDataStore) getHandler(w http.ResponseWriter, r *http.Requ
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
+	logger.Log.Info("After GET request", zap.String("id", id), zap.String("originalURL", originalURL))
+
 	w.Header().Set("Location", originalURL)
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
