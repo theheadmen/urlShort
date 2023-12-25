@@ -102,7 +102,7 @@ func (dataStore *ServerDataStore) postHandler(w http.ResponseWriter, r *http.Req
 		servShortURL = dataStore.configStore.FlagShortRunAddr
 	}
 
-	logger.Log.Info("After POST request", zap.String("body", url), zap.String("result", servShortURL+"/"+shortURL))
+	logger.Log.Info("After POST request", zap.String("body", url), zap.String("result", servShortURL+"/"+shortURL), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
 
 	fmt.Fprintf(w, servShortURL+"/%s", shortURL)
 }
@@ -129,7 +129,6 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 	dataStore.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	//w.Header().Set("Content-Encoding", "gzip")
 	w.WriteHeader(http.StatusCreated)
 	servShortURL := ""
 	// так как в тестах мы не используем флаги, нужно обезопасить себя
@@ -144,7 +143,7 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 		Result: servShortURL + "/" + shortURL,
 	}
 
-	logger.Log.Info("After POST JSON request", zap.String("body", req.URL), zap.String("result", servShortURL+"/"+shortURL))
+	logger.Log.Info("After POST JSON request", zap.String("body", req.URL), zap.String("result", servShortURL+"/"+shortURL), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
 
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(resp); err != nil {
