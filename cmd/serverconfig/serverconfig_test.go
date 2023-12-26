@@ -7,7 +7,7 @@ import (
 
 func TestServerConfigReadWriteFile(t *testing.T) {
 	fname := `settings.json`
-	settings := SavedUrl{
+	settings := SavedURL{
 		UUID:        1,
 		ShortURL:    `localhost`,
 		OriginalURL: `localhost`,
@@ -15,7 +15,7 @@ func TestServerConfigReadWriteFile(t *testing.T) {
 	if err := settings.Save(fname); err != nil {
 		t.Error(err)
 	}
-	var result SavedUrl
+	var result SavedURL
 	if err := (&result).Load(fname); err != nil {
 		t.Error(err)
 	}
@@ -30,7 +30,7 @@ func TestServerConfigReadWriteFile(t *testing.T) {
 
 func TestServerConfigReadAllWriteFile(t *testing.T) {
 	fname := `settings.json`
-	settings := SavedUrl{
+	settings := SavedURL{
 		UUID:        1,
 		ShortURL:    `ShortURL`,
 		OriginalURL: `OriginalURL`,
@@ -45,7 +45,7 @@ func TestServerConfigReadAllWriteFile(t *testing.T) {
 		t.Errorf(`Не нашли url для %+s`, "ShortURL")
 	}
 
-	if "OriginalURL" != originalURL {
+	if originalURL != "OriginalURL" {
 		t.Errorf(`%+s не равно %+s`, originalURL, "OriginalURL")
 	}
 	// удалим файл settings.json

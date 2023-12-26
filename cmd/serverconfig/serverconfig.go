@@ -17,15 +17,15 @@ type ConfigStore struct {
 	FlagFile         string
 }
 
-type SavedUrl struct {
+type SavedURL struct {
 	UUID        int    `json:"uuid"`
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
 }
 
 // Save сохраняет настройки в файле fname.
-func (savedUrl SavedUrl) Save(fname string) error {
-	savedUrlJson, err := json.Marshal(savedUrl)
+func (SavedURL SavedURL) Save(fname string) error {
+	savedURLJSON, err := json.Marshal(SavedURL)
 	if err != nil {
 		logger.Log.Fatal("Failed to marshal new data", zap.Error(err))
 		return err
@@ -37,23 +37,23 @@ func (savedUrl SavedUrl) Save(fname string) error {
 	}
 	defer file.Close()
 
-	savedUrlJson = append(savedUrlJson, '\n')
-	if _, err := file.Write(savedUrlJson); err != nil {
+	savedURLJSON = append(savedURLJSON, '\n')
+	if _, err := file.Write(savedURLJSON); err != nil {
 		logger.Log.Fatal("Failed to write to file", zap.Error(err))
 		return err
 	}
-	logger.Log.Info("Write new data to file", zap.Int("UUID", savedUrl.UUID), zap.String("OriginalURL", savedUrl.OriginalURL), zap.String("ShortURL", savedUrl.ShortURL))
+	logger.Log.Info("Write new data to file", zap.Int("UUID", SavedURL.UUID), zap.String("OriginalURL", SavedURL.OriginalURL), zap.String("ShortURL", SavedURL.ShortURL))
 	return nil
 }
 
 // Load читает настройки из файла fname.
-func (savedUrl *SavedUrl) Load(fname string) error {
+func (SavedURL *SavedURL) Load(fname string) error {
 	data, err := os.ReadFile(fname)
 	if err != nil {
 		return err
 	}
 
-	return json.Unmarshal(data, savedUrl)
+	return json.Unmarshal(data, SavedURL)
 }
 
 func ReadAllDataFromFile(filePath string) map[string]string {
@@ -63,7 +63,7 @@ func ReadAllDataFromFile(filePath string) map[string]string {
 	file, err := os.Open(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			logger.Log.Debug("File does not exist. Leaving savedUrls empty.")
+			logger.Log.Debug("File does not exist. Leaving SavedURLs empty.")
 		} else {
 			logger.Log.Fatal("Failed to open file", zap.Error(err))
 		}
@@ -72,7 +72,7 @@ func ReadAllDataFromFile(filePath string) map[string]string {
 
 		scanner := bufio.NewScanner(file)
 		for scanner.Scan() {
-			var result SavedUrl
+			var result SavedURL
 			err := json.Unmarshal([]byte(scanner.Text()), &result)
 			if err != nil {
 				logger.Log.Fatal("Failed unmarshal data", zap.Error(err))
@@ -106,7 +106,7 @@ func (configStore *ConfigStore) ParseFlags() {
 	flag.StringVar(&configStore.FlagRunAddr, "a", ":8080", "address and port to run server")
 	flag.StringVar(&configStore.FlagShortRunAddr, "b", "http://localhost:8080", "address and port to return short url")
 	flag.StringVar(&configStore.FlagLogLevel, "l", "debug", "log level")
-	flag.StringVar(&configStore.FlagFile, "f", "./tmp/short-url-db.json", "file with saved urls")
+	flag.StringVar(&configStore.FlagFile, "f", "/tmp/short-url-db.json", "file with saved urls")
 	// парсим переданные серверу аргументы в зарегистрированные переменные
 	flag.Parse()
 

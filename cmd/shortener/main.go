@@ -44,7 +44,7 @@ func main() {
 	if err := logger.Initialize(configStore.FlagLogLevel); err != nil {
 		panic(err)
 	}
-	logger.Log.Info("Running server", zap.String("address", configStore.FlagRunAddr))
+	logger.Log.Info("Running server", zap.String("address", configStore.FlagRunAddr), zap.String("short address", configStore.FlagShortRunAddr), zap.String("file", configStore.FlagFile))
 	urlMap := config.ReadAllDataFromFile(configStore.FlagFile)
 
 	err := http.ListenAndServe(configStore.FlagRunAddr, makeChiServ(configStore, urlMap, true /*isWithFile*/))
@@ -119,12 +119,12 @@ func (dataStore *ServerDataStore) postHandler(w http.ResponseWriter, r *http.Req
 		dataStore.mu.Unlock()
 
 		if dataStore.isWithFile {
-			savedUrl := config.SavedUrl{
+			SavedURL := config.SavedURL{
 				UUID:        len(dataStore.urlMap),
 				ShortURL:    shortURL,
 				OriginalURL: url,
 			}
-			savedUrl.Save(dataStore.configStore.FlagFile)
+			SavedURL.Save(dataStore.configStore.FlagFile)
 		}
 	} else {
 		logger.Log.Info("We already have data for this url", zap.String("OriginalURL", url), zap.String("ShortURL", shortURL))
@@ -172,12 +172,12 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 		dataStore.mu.Unlock()
 
 		if dataStore.isWithFile {
-			savedUrl := config.SavedUrl{
+			SavedURL := config.SavedURL{
 				UUID:        len(dataStore.urlMap),
 				ShortURL:    shortURL,
 				OriginalURL: req.URL,
 			}
-			savedUrl.Save(dataStore.configStore.FlagFile)
+			SavedURL.Save(dataStore.configStore.FlagFile)
 		}
 	} else {
 		logger.Log.Info("We already have data for this url", zap.String("OriginalURL", req.URL), zap.String("ShortURL", shortURL))
