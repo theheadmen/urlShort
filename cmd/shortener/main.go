@@ -25,13 +25,15 @@ type ServerDataStore struct {
 	urlMap      map[string]string
 	mu          sync.RWMutex
 	configStore config.ConfigStore
+	isWithFile  bool
 }
 
-func NewServerDataStore(configStore *config.ConfigStore) *ServerDataStore {
+func NewServerDataStore(configStore *config.ConfigStore, urlMap map[string]string, isWithFile bool) *ServerDataStore {
 	return &ServerDataStore{
-		urlMap:      make(map[string]string),
+		urlMap:      urlMap,
 		mu:          sync.RWMutex{},
 		configStore: *configStore,
+		isWithFile:  isWithFile,
 	}
 }
 
@@ -43,16 +45,17 @@ func main() {
 		panic(err)
 	}
 	logger.Log.Info("Running server", zap.String("address", configStore.FlagRunAddr))
+	urlMap := config.ReadAllDataFromFile(configStore.FlagFile)
 
-	err := http.ListenAndServe(configStore.FlagRunAddr, makeChiServ(configStore))
+	err := http.ListenAndServe(configStore.FlagRunAddr, makeChiServ(configStore, urlMap, true /*isWithFile*/))
 	if err != nil {
 		logger.Log.Fatal("Server is down", zap.String("address", err.Error()))
 		panic(err)
 	}
 }
 
-func makeChiServ(configStore *config.ConfigStore) chi.Router {
-	dataStore := NewServerDataStore(configStore)
+func makeChiServ(configStore *config.ConfigStore, urlMap map[string]string, isWithFile bool) chi.Router {
+	dataStore := NewServerDataStore(configStore, urlMap, isWithFile)
 	router := chi.NewRouter()
 
 	// Add gzip middleware
@@ -106,9 +109,26 @@ func (dataStore *ServerDataStore) postHandler(w http.ResponseWriter, r *http.Req
 
 	shortURL := generateShortURL(url)
 
-	dataStore.mu.Lock()
-	dataStore.urlMap[shortURL] = url
-	dataStore.mu.Unlock()
+	dataStore.mu.RLock()
+	_, ok := dataStore.urlMap[shortURL]
+	dataStore.mu.RUnlock()
+
+	if !ok {
+		dataStore.mu.Lock()
+		dataStore.urlMap[shortURL] = url
+		dataStore.mu.Unlock()
+
+		if dataStore.isWithFile {
+			savedUrl := config.SavedUrl{
+				UUID:        len(dataStore.urlMap),
+				ShortURL:    shortURL,
+				OriginalURL: url,
+			}
+			savedUrl.Save(dataStore.configStore.FlagFile)
+		}
+	} else {
+		logger.Log.Info("We already have data for this url", zap.String("OriginalURL", url), zap.String("ShortURL", shortURL))
+	}
 
 	w.Header().Set("Content-Type", "text/html")
 	w.WriteHeader(http.StatusCreated)
@@ -142,9 +162,26 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 
 	shortURL := generateShortURL(req.URL)
 
-	dataStore.mu.Lock()
-	dataStore.urlMap[shortURL] = req.URL
-	dataStore.mu.Unlock()
+	dataStore.mu.RLock()
+	_, ok := dataStore.urlMap[shortURL]
+	dataStore.mu.RUnlock()
+
+	if !ok {
+		dataStore.mu.Lock()
+		dataStore.urlMap[shortURL] = req.URL
+		dataStore.mu.Unlock()
+
+		if dataStore.isWithFile {
+			savedUrl := config.SavedUrl{
+				UUID:        len(dataStore.urlMap),
+				ShortURL:    shortURL,
+				OriginalURL: req.URL,
+			}
+			savedUrl.Save(dataStore.configStore.FlagFile)
+		}
+	} else {
+		logger.Log.Info("We already have data for this url", zap.String("OriginalURL", req.URL), zap.String("ShortURL", shortURL))
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

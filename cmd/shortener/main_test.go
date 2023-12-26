@@ -41,7 +41,8 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyVal
 
 func TestSimpleHandler(t *testing.T) {
 	configStore := config.NewConfigStore()
-	ts := httptest.NewServer(makeChiServ(configStore))
+	urlMap := make(map[string]string)
+	ts := httptest.NewServer(makeChiServ(configStore, urlMap, false /*isWithFile*/))
 	defer ts.Close()
 
 	testCases := []struct {
@@ -76,7 +77,8 @@ func TestSimpleHandler(t *testing.T) {
 
 func TestJsonPost(t *testing.T) {
 	configStore := config.NewConfigStore()
-	ts := httptest.NewServer(makeChiServ(configStore))
+	urlMap := make(map[string]string)
+	ts := httptest.NewServer(makeChiServ(configStore, urlMap, false /*isWithFile*/))
 	defer ts.Close()
 
 	testCases := []struct {
@@ -162,7 +164,8 @@ func TestSequenceHandler(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.testURL, func(t *testing.T) {
-			dataStore := NewServerDataStore(configStore)
+			urlMap := make(map[string]string)
+			dataStore := NewServerDataStore(configStore, urlMap, false /*isWithFile*/)
 			// тестим последовательно пост + гет запросы
 			body := strings.NewReader(tc.testURL)
 
@@ -239,7 +242,8 @@ func TestGenerateShortURL(t *testing.T) {
 
 func TestCompressResponse(t *testing.T) {
 	configStore := config.NewConfigStore()
-	dataStore := NewServerDataStore(configStore)
+	urlMap := make(map[string]string)
+	dataStore := NewServerDataStore(configStore, urlMap, false /*isWithFile*/)
 	r := chi.NewRouter()
 
 	r.Use(middleware.Compress(5, "text/html", "application/json"))
