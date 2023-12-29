@@ -9,12 +9,12 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/theheadmen/urlShort/cmd/logger"
 	"github.com/theheadmen/urlShort/cmd/models"
 	config "github.com/theheadmen/urlShort/cmd/serverconfig"
+	"github.com/theheadmen/urlShort/cmd/storager"
 	"go.uber.org/zap"
 
 	"github.com/go-chi/chi"
@@ -22,18 +22,14 @@ import (
 )
 
 type ServerDataStore struct {
-	urlMap      map[string]string
-	mu          sync.RWMutex
 	configStore config.ConfigStore
-	isWithFile  bool
+	storager    *storager.Storager
 }
 
-func NewServerDataStore(configStore *config.ConfigStore, urlMap map[string]string, isWithFile bool) *ServerDataStore {
+func NewServerDataStore(configStore *config.ConfigStore, storager *storager.Storager) *ServerDataStore {
 	return &ServerDataStore{
-		urlMap:      urlMap,
-		mu:          sync.RWMutex{},
 		configStore: *configStore,
-		isWithFile:  isWithFile,
+		storager:    storager,
 	}
 }
 
@@ -45,17 +41,19 @@ func main() {
 		panic(err)
 	}
 	logger.Log.Info("Running server", zap.String("address", configStore.FlagRunAddr), zap.String("short address", configStore.FlagShortRunAddr), zap.String("file", configStore.FlagFile))
-	urlMap := config.ReadAllDataFromFile(configStore.FlagFile)
 
-	err := http.ListenAndServe(configStore.FlagRunAddr, makeChiServ(configStore, urlMap, true /*isWithFile*/))
+	err := http.ListenAndServe(configStore.FlagRunAddr, makeChiServ(configStore, true /*isWithFile*/))
 	if err != nil {
 		logger.Log.Fatal("Server is down", zap.String("address", err.Error()))
 		panic(err)
 	}
 }
 
-func makeChiServ(configStore *config.ConfigStore, urlMap map[string]string, isWithFile bool) chi.Router {
-	dataStore := NewServerDataStore(configStore, urlMap, isWithFile)
+func makeChiServ(configStore *config.ConfigStore, isWithFile bool) chi.Router {
+	storager := storager.NewStorager(configStore.FlagFile, isWithFile, make(map[string]string))
+	storager.ReadAllDataFromFile()
+
+	dataStore := NewServerDataStore(configStore, storager)
 	router := chi.NewRouter()
 
 	// Add gzip middleware
@@ -109,26 +107,7 @@ func (dataStore *ServerDataStore) postHandler(w http.ResponseWriter, r *http.Req
 
 	shortURL := generateShortURL(url)
 
-	dataStore.mu.RLock()
-	_, ok := dataStore.urlMap[shortURL]
-	dataStore.mu.RUnlock()
-
-	if !ok {
-		dataStore.mu.Lock()
-		dataStore.urlMap[shortURL] = url
-		dataStore.mu.Unlock()
-
-		if dataStore.isWithFile {
-			SavedURL := config.SavedURL{
-				UUID:        len(dataStore.urlMap),
-				ShortURL:    shortURL,
-				OriginalURL: url,
-			}
-			SavedURL.Save(dataStore.configStore.FlagFile)
-		}
-	} else {
-		logger.Log.Info("We already have data for this url", zap.String("OriginalURL", url), zap.String("ShortURL", shortURL))
-	}
+	dataStore.storager.StorageURL(shortURL, url)
 
 	w.Header().Set("Content-Type", "text/html")
 	w.WriteHeader(http.StatusCreated)
@@ -162,26 +141,7 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 
 	shortURL := generateShortURL(req.URL)
 
-	dataStore.mu.RLock()
-	_, ok := dataStore.urlMap[shortURL]
-	dataStore.mu.RUnlock()
-
-	if !ok {
-		dataStore.mu.Lock()
-		dataStore.urlMap[shortURL] = req.URL
-		dataStore.mu.Unlock()
-
-		if dataStore.isWithFile {
-			SavedURL := config.SavedURL{
-				UUID:        len(dataStore.urlMap),
-				ShortURL:    shortURL,
-				OriginalURL: req.URL,
-			}
-			SavedURL.Save(dataStore.configStore.FlagFile)
-		}
-	} else {
-		logger.Log.Info("We already have data for this url", zap.String("OriginalURL", req.URL), zap.String("ShortURL", shortURL))
-	}
+	dataStore.storager.StorageURL(shortURL, req.URL)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -209,10 +169,7 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 
 func (dataStore *ServerDataStore) getHandler(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/")
-
-	dataStore.mu.RLock()
-	originalURL, ok := dataStore.urlMap[id]
-	dataStore.mu.RUnlock()
+	originalURL, ok := dataStore.storager.GetURL(id)
 
 	if !ok {
 		logger.Log.Debug("cannot find url by id", zap.String("id", id))

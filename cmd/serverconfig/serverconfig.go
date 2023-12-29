@@ -1,13 +1,8 @@
 package config
 
 import (
-	"bufio"
-	"encoding/json"
 	"flag"
 	"os"
-
-	"github.com/theheadmen/urlShort/cmd/logger"
-	"go.uber.org/zap"
 )
 
 type ConfigStore struct {
@@ -15,78 +10,6 @@ type ConfigStore struct {
 	FlagShortRunAddr string
 	FlagLogLevel     string
 	FlagFile         string
-}
-
-type SavedURL struct {
-	UUID        int    `json:"uuid"`
-	ShortURL    string `json:"short_url"`
-	OriginalURL string `json:"original_url"`
-}
-
-// Save сохраняет настройки в файле fname.
-func (SavedURL SavedURL) Save(fname string) error {
-	savedURLJSON, err := json.Marshal(SavedURL)
-	if err != nil {
-		logger.Log.Fatal("Failed to marshal new data", zap.Error(err))
-		return err
-	}
-	file, err := os.OpenFile(fname, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		logger.Log.Fatal("Failed to open file for writing", zap.Error(err))
-		return err
-	}
-	defer file.Close()
-
-	savedURLJSON = append(savedURLJSON, '\n')
-	if _, err := file.Write(savedURLJSON); err != nil {
-		logger.Log.Fatal("Failed to write to file", zap.Error(err))
-		return err
-	}
-	logger.Log.Info("Write new data to file", zap.Int("UUID", SavedURL.UUID), zap.String("OriginalURL", SavedURL.OriginalURL), zap.String("ShortURL", SavedURL.ShortURL))
-	return nil
-}
-
-// Load читает настройки из файла fname.
-func (SavedURL *SavedURL) Load(fname string) error {
-	data, err := os.ReadFile(fname)
-	if err != nil {
-		return err
-	}
-
-	return json.Unmarshal(data, SavedURL)
-}
-
-func ReadAllDataFromFile(filePath string) map[string]string {
-	urlMap := make(map[string]string)
-
-	// Read from file
-	file, err := os.Open(filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			logger.Log.Debug("File does not exist. Leaving SavedURLs empty.")
-		} else {
-			logger.Log.Fatal("Failed to open file", zap.Error(err))
-		}
-	} else {
-		defer file.Close()
-
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			var result SavedURL
-			err := json.Unmarshal([]byte(scanner.Text()), &result)
-			if err != nil {
-				logger.Log.Fatal("Failed unmarshal data", zap.Error(err))
-			}
-			urlMap[result.ShortURL] = result.OriginalURL
-			logger.Log.Info("Read new data from file", zap.Int("UUID", result.UUID), zap.String("OriginalURL", result.OriginalURL), zap.String("ShortURL", result.ShortURL))
-		}
-
-		if err := scanner.Err(); err != nil {
-			logger.Log.Fatal("Failed to read file", zap.Error(err))
-		}
-	}
-
-	return urlMap
 }
 
 func NewConfigStore() *ConfigStore {

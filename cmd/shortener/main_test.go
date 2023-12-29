@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	config "github.com/theheadmen/urlShort/cmd/serverconfig"
+	"github.com/theheadmen/urlShort/cmd/storager"
 )
 
 func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyValue io.Reader) (*http.Response, string) {
@@ -31,18 +32,17 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyVal
 		require.NoError(t, err)
 
 		return resp, string(respBody)
-	} else {
-		respBody, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-
-		return resp, string(respBody)
 	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	return resp, string(respBody)
 }
 
 func TestSimpleHandler(t *testing.T) {
 	configStore := config.NewConfigStore()
-	urlMap := make(map[string]string)
-	ts := httptest.NewServer(makeChiServ(configStore, urlMap, false /*isWithFile*/))
+	ts := httptest.NewServer(makeChiServ(configStore, false /*isWithFile*/))
 	defer ts.Close()
 
 	testCases := []struct {
@@ -77,8 +77,7 @@ func TestSimpleHandler(t *testing.T) {
 
 func TestJsonPost(t *testing.T) {
 	configStore := config.NewConfigStore()
-	urlMap := make(map[string]string)
-	ts := httptest.NewServer(makeChiServ(configStore, urlMap, false /*isWithFile*/))
+	ts := httptest.NewServer(makeChiServ(configStore, false /*isWithFile*/))
 	defer ts.Close()
 
 	testCases := []struct {
@@ -164,8 +163,8 @@ func TestSequenceHandler(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.testURL, func(t *testing.T) {
-			urlMap := make(map[string]string)
-			dataStore := NewServerDataStore(configStore, urlMap, false /*isWithFile*/)
+			storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string))
+			dataStore := NewServerDataStore(configStore, storager)
 			// тестим последовательно пост + гет запросы
 			body := strings.NewReader(tc.testURL)
 
@@ -242,8 +241,8 @@ func TestGenerateShortURL(t *testing.T) {
 
 func TestCompressResponse(t *testing.T) {
 	configStore := config.NewConfigStore()
-	urlMap := make(map[string]string)
-	dataStore := NewServerDataStore(configStore, urlMap, false /*isWithFile*/)
+	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string))
+	dataStore := NewServerDataStore(configStore, storager)
 	r := chi.NewRouter()
 
 	r.Use(middleware.Compress(5, "text/html", "application/json"))
