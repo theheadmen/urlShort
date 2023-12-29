@@ -27,7 +27,7 @@ func NewStorager(filePath string, isWithFile bool, URLMap map[string]string) *St
 	}
 }
 
-func (storager *Storager) ReadAllDataFromFile() {
+func (storager *Storager) ReadAllDataFromFile() error {
 	// Read from file
 	file, err := os.Open(storager.filePath)
 	if err != nil {
@@ -36,44 +36,48 @@ func (storager *Storager) ReadAllDataFromFile() {
 		} else {
 			logger.Log.Fatal("Failed to open file", zap.Error(err))
 		}
-	} else {
-		defer file.Close()
-
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			var result models.SavedURL
-			err := json.Unmarshal([]byte(scanner.Text()), &result)
-			if err != nil {
-				logger.Log.Debug("Failed unmarshal data", zap.Error(err))
-			}
-			storager.URLMap[result.ShortURL] = result.OriginalURL
-			logger.Log.Info("Read new data from file", zap.Int("UUID", result.UUID), zap.String("OriginalURL", result.OriginalURL), zap.String("ShortURL", result.ShortURL))
-		}
-
-		if err := scanner.Err(); err != nil {
-			logger.Log.Fatal("Failed to read file", zap.Error(err))
-		}
+		return err
 	}
+
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		var result models.SavedURL
+		err := json.Unmarshal([]byte(scanner.Text()), &result)
+		if err != nil {
+			logger.Log.Debug("Failed unmarshal data", zap.Error(err))
+		}
+		storager.URLMap[result.ShortURL] = result.OriginalURL
+		logger.Log.Info("Read new data from file", zap.Int("UUID", result.UUID), zap.String("OriginalURL", result.OriginalURL), zap.String("ShortURL", result.ShortURL))
+	}
+
+	if err := scanner.Err(); err != nil {
+		logger.Log.Fatal("Failed to read file", zap.Error(err))
+	}
+
+	return err
 }
 
-func (storager *Storager) StorageURL(shortURL string, originalURL string) {
+func (storager *Storager) StoreURL(shortURL string, originalURL string) {
 	_, ok := storager.GetURL(shortURL)
 
-	if !ok {
-		storager.mu.Lock()
-		storager.URLMap[shortURL] = originalURL
-		storager.mu.Unlock()
-
-		if storager.isWithFile {
-			savedURL := models.SavedURL{
-				UUID:        len(storager.URLMap),
-				ShortURL:    shortURL,
-				OriginalURL: originalURL,
-			}
-			storager.Save(savedURL)
-		}
-	} else {
+	if ok {
 		logger.Log.Info("We already have data for this url", zap.String("OriginalURL", originalURL), zap.String("ShortURL", shortURL))
+		return
+	}
+
+	storager.mu.Lock()
+	storager.URLMap[shortURL] = originalURL
+	storager.mu.Unlock()
+
+	if storager.isWithFile {
+		savedURL := models.SavedURL{
+			UUID:        len(storager.URLMap),
+			ShortURL:    shortURL,
+			OriginalURL: originalURL,
+		}
+		storager.Save(savedURL)
 	}
 }
 

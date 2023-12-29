@@ -25,7 +25,9 @@ func TestStoragerReadAllWriteFile(t *testing.T) {
 		t.Error(err)
 	}
 
-	storager.ReadAllDataFromFile()
+	if err := storager.ReadAllDataFromFile(); err != nil {
+		t.Error(err)
+	}
 	originalURL, ok := storager.GetURL("ShortURL")
 	if !ok {
 		t.Errorf(`Не нашли url для %+s`, "ShortURL")

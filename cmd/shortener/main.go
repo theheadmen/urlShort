@@ -41,18 +41,17 @@ func main() {
 		panic(err)
 	}
 	logger.Log.Info("Running server", zap.String("address", configStore.FlagRunAddr), zap.String("short address", configStore.FlagShortRunAddr), zap.String("file", configStore.FlagFile))
+	storager := storager.NewStorager(configStore.FlagFile, true /*isWithFile*/, make(map[string]string))
+	storager.ReadAllDataFromFile()
 
-	err := http.ListenAndServe(configStore.FlagRunAddr, makeChiServ(configStore, true /*isWithFile*/))
+	err := http.ListenAndServe(configStore.FlagRunAddr, makeChiServ(configStore, storager))
 	if err != nil {
 		logger.Log.Fatal("Server is down", zap.String("address", err.Error()))
 		panic(err)
 	}
 }
 
-func makeChiServ(configStore *config.ConfigStore, isWithFile bool) chi.Router {
-	storager := storager.NewStorager(configStore.FlagFile, isWithFile, make(map[string]string))
-	storager.ReadAllDataFromFile()
-
+func makeChiServ(configStore *config.ConfigStore, storager *storager.Storager) chi.Router {
 	dataStore := NewServerDataStore(configStore, storager)
 	router := chi.NewRouter()
 
@@ -107,7 +106,7 @@ func (dataStore *ServerDataStore) postHandler(w http.ResponseWriter, r *http.Req
 
 	shortURL := generateShortURL(url)
 
-	dataStore.storager.StorageURL(shortURL, url)
+	dataStore.storager.StoreURL(shortURL, url)
 
 	w.Header().Set("Content-Type", "text/html")
 	w.WriteHeader(http.StatusCreated)
@@ -141,7 +140,7 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 
 	shortURL := generateShortURL(req.URL)
 
-	dataStore.storager.StorageURL(shortURL, req.URL)
+	dataStore.storager.StoreURL(shortURL, req.URL)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

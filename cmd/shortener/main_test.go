@@ -42,7 +42,8 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyVal
 
 func TestSimpleHandler(t *testing.T) {
 	configStore := config.NewConfigStore()
-	ts := httptest.NewServer(makeChiServ(configStore, false /*isWithFile*/))
+	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string))
+	ts := httptest.NewServer(makeChiServ(configStore, storager))
 	defer ts.Close()
 
 	testCases := []struct {
@@ -77,7 +78,8 @@ func TestSimpleHandler(t *testing.T) {
 
 func TestJsonPost(t *testing.T) {
 	configStore := config.NewConfigStore()
-	ts := httptest.NewServer(makeChiServ(configStore, false /*isWithFile*/))
+	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string))
+	ts := httptest.NewServer(makeChiServ(configStore, storager))
 	defer ts.Close()
 
 	testCases := []struct {
