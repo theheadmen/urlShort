@@ -10,6 +10,7 @@ type ConfigStore struct {
 	FlagShortRunAddr string
 	FlagLogLevel     string
 	FlagFile         string
+	FlagDB           string
 }
 
 func NewConfigStore() *ConfigStore {
@@ -18,6 +19,7 @@ func NewConfigStore() *ConfigStore {
 		FlagShortRunAddr: "",
 		FlagLogLevel:     "",
 		FlagFile:         "",
+		FlagDB:           "",
 	}
 }
 
@@ -30,6 +32,7 @@ func (configStore *ConfigStore) ParseFlags() {
 	flag.StringVar(&configStore.FlagShortRunAddr, "b", "http://localhost:8080", "address and port to return short url")
 	flag.StringVar(&configStore.FlagLogLevel, "l", "debug", "log level")
 	flag.StringVar(&configStore.FlagFile, "f", "/tmp/short-url-db.json", "file with saved urls")
+	flag.StringVar(&configStore.FlagDB, "d", "", "params to connect with DB")
 	// парсим переданные серверу аргументы в зарегистрированные переменные
 	flag.Parse()
 
@@ -47,5 +50,9 @@ func (configStore *ConfigStore) ParseFlags() {
 
 	if envFile := os.Getenv("FILE_STORAGE_PATH"); envFile != "" {
 		configStore.FlagFile = envFile
+	}
+
+	if envDB := os.Getenv("DATABASE_DSN"); envDB != "" {
+		configStore.FlagDB = envDB
 	}
 }

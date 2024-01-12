@@ -19,6 +19,10 @@ import (
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
+
+	"database/sql"
+
+	_ "github.com/lib/pq"
 )
 
 type ServerDataStore struct {
@@ -77,6 +81,7 @@ func makeChiServ(configStore *config.ConfigStore, storager *storager.Storager) c
 	router.Get("/{shortUrl}", dataStore.getHandler)
 	router.Post("/", dataStore.postHandler)
 	router.Post("/api/shorten", dataStore.postJSONHandler)
+	router.Get("/ping", dataStore.pingHandler)
 	return router
 }
 
@@ -180,6 +185,28 @@ func (dataStore *ServerDataStore) getHandler(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Location", originalURL)
 	w.WriteHeader(http.StatusTemporaryRedirect)
+}
+
+func (dataStore *ServerDataStore) pingHandler(w http.ResponseWriter, r *http.Request) {
+	// for local tests can be used "host=localhost port=5432 user=postgres password=example dbname=godb sslmode=disable"
+	psqlInfo := dataStore.configStore.FlagDB
+	db, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		logger.Log.Debug("Can't open DB", zap.String("error", err.Error()))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	err = db.Ping()
+	if err != nil {
+		logger.Log.Debug("Can't ping DB", zap.String("error", err.Error()))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	logger.Log.Info("Ping succesful")
+	w.WriteHeader(http.StatusOK)
 }
 
 func generateShortURL(url string) string {
