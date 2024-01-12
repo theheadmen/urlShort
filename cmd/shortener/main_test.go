@@ -1,16 +1,19 @@
 package main
 
 import (
+	"compress/gzip"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	config "github.com/theheadmen/urlShort/cmd/serverconfig"
-
+	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	config "github.com/theheadmen/urlShort/cmd/serverconfig"
+	"github.com/theheadmen/urlShort/cmd/storager"
 )
 
 func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyValue io.Reader) (*http.Response, string) {
@@ -21,6 +24,16 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyVal
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
+	if resp.Header.Get("Content-Encoding") == "gzip" {
+		gz, err := gzip.NewReader(resp.Body)
+		require.NoError(t, err)
+
+		respBody, err := io.ReadAll(gz)
+		require.NoError(t, err)
+
+		return resp, string(respBody)
+	}
+
 	respBody, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 
@@ -29,7 +42,8 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyVal
 
 func TestSimpleHandler(t *testing.T) {
 	configStore := config.NewConfigStore()
-	ts := httptest.NewServer(makeChiServ(configStore))
+	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string))
+	ts := httptest.NewServer(makeChiServ(configStore, storager))
 	defer ts.Close()
 
 	testCases := []struct {
@@ -62,6 +76,80 @@ func TestSimpleHandler(t *testing.T) {
 	}
 }
 
+func TestJsonPost(t *testing.T) {
+	configStore := config.NewConfigStore()
+	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string))
+	ts := httptest.NewServer(makeChiServ(configStore, storager))
+	defer ts.Close()
+
+	testCases := []struct {
+		name         string // добавляем название тестов
+		method       string
+		body         string // добавляем тело запроса в табличные тесты
+		expectedCode int
+		expectedBody string
+	}{
+		{
+			name:         "method_get",
+			method:       http.MethodGet,
+			expectedCode: http.StatusMethodNotAllowed,
+			expectedBody: "",
+		},
+		{
+			name:         "method_put",
+			method:       http.MethodPut,
+			expectedCode: http.StatusMethodNotAllowed,
+			expectedBody: "",
+		},
+		{
+			name:         "method_delete",
+			method:       http.MethodDelete,
+			expectedCode: http.StatusMethodNotAllowed,
+			expectedBody: "",
+		},
+		{
+			name:         "method_post_without_body",
+			method:       http.MethodPost,
+			expectedCode: http.StatusUnprocessableEntity,
+			expectedBody: "",
+		},
+		{
+			name:         "method_post_unsupported_type",
+			method:       http.MethodPost,
+			body:         `{"request": {"type": "idunno", "command": "do something"}, "version": "1.0"}`,
+			expectedCode: http.StatusUnprocessableEntity,
+			expectedBody: "",
+		},
+		{
+			name:         "method_post_success",
+			method:       http.MethodPost,
+			body:         `{"url": "google.com"}`,
+			expectedCode: http.StatusCreated,
+			expectedBody: `{"result":"http://localhost:8080/1MnZAnMm"}`,
+		}, {
+			name:         "method_post_success",
+			method:       http.MethodPost,
+			body:         `{"url": "yandex.ru"}`,
+			expectedCode: http.StatusCreated,
+			expectedBody: `{"result":"http://localhost:8080/eeILJFID"}`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.method, func(t *testing.T) {
+			testValue := strings.NewReader(tc.body)
+			resp, get := testRequest(t, ts, tc.method, "/api/shorten", testValue)
+			get = strings.TrimSuffix(string(get), "\n")
+			defer resp.Body.Close()
+
+			assert.Equal(t, tc.expectedCode, resp.StatusCode, "Код ответа не совпадает с ожидаемым")
+			if tc.expectedBody != "" {
+				assert.Equal(t, tc.expectedBody, get, "Тело ответа не совпадает с ожидаемым")
+			}
+		})
+	}
+}
+
 func TestSequenceHandler(t *testing.T) {
 	configStore := config.NewConfigStore()
 	testCases := []struct {
@@ -77,18 +165,21 @@ func TestSequenceHandler(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.testURL, func(t *testing.T) {
-			dataStore := NewServerDataStore(configStore)
+			storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string))
+			dataStore := NewServerDataStore(configStore, storager)
 			// тестим последовательно пост + гет запросы
 			body := strings.NewReader(tc.testURL)
-			req1 := httptest.NewRequest("POST", "/", body)
 
+			req1 := httptest.NewRequest("POST", "/", body)
 			req2 := httptest.NewRequest("GET", "/"+tc.expectedShortURL, nil)
 
 			// для этого используем два рекордера, по одному для каждого запроса
 			recorder1 := httptest.NewRecorder()
 			recorder2 := httptest.NewRecorder()
+
 			handlerFunc := http.HandlerFunc(dataStore.postHandler)
 			handlerFunc.ServeHTTP(recorder1, req1)
+
 			handlerFunc2 := http.HandlerFunc(dataStore.getHandler)
 			handlerFunc2.ServeHTTP(recorder2, req2)
 
@@ -96,6 +187,7 @@ func TestSequenceHandler(t *testing.T) {
 			if status := recorder1.Code; status != http.StatusCreated {
 				t.Errorf("обработчик вернул неверный код состояния: получили %v хотели %v", status, http.StatusCreated)
 			}
+
 			// затем мы или проверяем что в Location
 			if tc.returnCode == http.StatusTemporaryRedirect {
 				if status := recorder2.Code; status != tc.returnCode {
@@ -147,4 +239,51 @@ func TestGenerateShortURL(t *testing.T) {
 			assert.Equal(t, generateShortURL(test.value), test.want)
 		})
 	}
+}
+
+func TestCompressResponse(t *testing.T) {
+	configStore := config.NewConfigStore()
+	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string))
+	dataStore := NewServerDataStore(configStore, storager)
+	r := chi.NewRouter()
+
+	r.Use(middleware.Compress(5, "text/html", "application/json"))
+	r.Post("/", dataStore.postHandler)
+
+	t.Run("with Accept-Encoding", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/", strings.NewReader("google.com"))
+		req.Header.Set("Accept-Encoding", "gzip")
+		w := httptest.NewRecorder()
+
+		r.ServeHTTP(w, req)
+
+		resp := w.Result()
+		body, _ := io.ReadAll(resp.Body)
+		defer resp.Body.Close()
+		assert.Equal(t, "gzip", resp.Header.Get("Content-Encoding"), "Не тот тип кодирования контента")
+
+		gz, err := gzip.NewReader(strings.NewReader(string(body)))
+		require.NoError(t, err)
+		defer gz.Close()
+
+		decompressed, err := io.ReadAll(gz)
+		require.NoError(t, err)
+
+		assert.Equal(t, "http://localhost:8080/1MnZAnMm", string(decompressed), "Тело ответа не совпадает с ожидаемым")
+	})
+
+	t.Run("without Accept-Encoding", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/", strings.NewReader("google.com"))
+		w := httptest.NewRecorder()
+
+		r.ServeHTTP(w, req)
+
+		resp := w.Result()
+		body, _ := io.ReadAll(resp.Body)
+		defer resp.Body.Close()
+
+		assert.Equal(t, "", resp.Header.Get("Content-Encoding"), "Не тот тип кодирования контента")
+
+		assert.Equal(t, "http://localhost:8080/1MnZAnMm", string(body), "Тело ответа не совпадает с ожидаемым")
+	})
 }
