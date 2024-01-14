@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/theheadmen/urlShort/cmd/dbconnector"
 	"github.com/theheadmen/urlShort/cmd/logger"
 	"github.com/theheadmen/urlShort/cmd/models"
 	"go.uber.org/zap"
@@ -16,15 +17,36 @@ type Storager struct {
 	isWithFile bool
 	URLMap     map[string]string
 	mu         sync.RWMutex
+	DB         *dbconnector.DBConnector
 }
 
-func NewStorager(filePath string, isWithFile bool, URLMap map[string]string) *Storager {
+func NewStorager(filePath string, isWithFile bool, URLMap map[string]string, dbConnector *dbconnector.DBConnector) *Storager {
 	return &Storager{
 		filePath:   filePath,
 		isWithFile: isWithFile,
 		URLMap:     URLMap,
 		mu:         sync.RWMutex{},
+		DB:         dbConnector,
 	}
+}
+
+func (storager *Storager) ReadAllData() error {
+	if storager.DB.IsAlive {
+		urls, err := storager.DB.SelectAllSavedURLs()
+		if err != nil {
+			logger.Log.Fatal("Failed to read from database", zap.Error(err))
+			return err
+		}
+
+		for _, url := range urls {
+			storager.URLMap[url.ShortURL] = url.OriginalURL
+			logger.Log.Info("Read new data from database", zap.Int("UUID", url.UUID), zap.String("OriginalURL", url.OriginalURL), zap.String("ShortURL", url.ShortURL))
+		}
+
+		return err
+	}
+
+	return storager.ReadAllDataFromFile()
 }
 
 func (storager *Storager) ReadAllDataFromFile() error {
@@ -71,12 +93,15 @@ func (storager *Storager) StoreURL(shortURL string, originalURL string) {
 	storager.URLMap[shortURL] = originalURL
 	storager.mu.Unlock()
 
-	if storager.isWithFile {
-		savedURL := models.SavedURL{
-			UUID:        len(storager.URLMap),
-			ShortURL:    shortURL,
-			OriginalURL: originalURL,
-		}
+	savedURL := models.SavedURL{
+		UUID:        len(storager.URLMap),
+		ShortURL:    shortURL,
+		OriginalURL: originalURL,
+	}
+
+	if storager.DB.IsAlive {
+		storager.DB.InsertSavedURL(savedURL)
+	} else if storager.isWithFile {
 		storager.Save(savedURL)
 	}
 }

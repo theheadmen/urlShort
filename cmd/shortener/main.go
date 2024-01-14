@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/theheadmen/urlShort/cmd/dbconnector"
 	"github.com/theheadmen/urlShort/cmd/logger"
 	"github.com/theheadmen/urlShort/cmd/models"
 	config "github.com/theheadmen/urlShort/cmd/serverconfig"
@@ -19,8 +20,6 @@ import (
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
-
-	"database/sql"
 
 	_ "github.com/lib/pq"
 )
@@ -45,8 +44,9 @@ func main() {
 		panic(err)
 	}
 	logger.Log.Info("Running server", zap.String("address", configStore.FlagRunAddr), zap.String("short address", configStore.FlagShortRunAddr), zap.String("file", configStore.FlagFile))
-	storager := storager.NewStorager(configStore.FlagFile, true /*isWithFile*/, make(map[string]string))
-	storager.ReadAllDataFromFile()
+	dbConnector := dbconnector.NewDBConnector(configStore.FlagDB)
+	storager := storager.NewStorager(configStore.FlagFile, true /*isWithFile*/, make(map[string]string), dbConnector)
+	storager.ReadAllData()
 
 	err := http.ListenAndServe(configStore.FlagRunAddr, makeChiServ(configStore, storager))
 	if err != nil {
@@ -188,17 +188,13 @@ func (dataStore *ServerDataStore) getHandler(w http.ResponseWriter, r *http.Requ
 }
 
 func (dataStore *ServerDataStore) pingHandler(w http.ResponseWriter, r *http.Request) {
-	// for local tests can be used "host=localhost port=5432 user=postgres password=example dbname=godb sslmode=disable"
-	psqlInfo := dataStore.configStore.FlagDB
-	db, err := sql.Open("postgres", psqlInfo)
-	if err != nil {
-		logger.Log.Debug("Can't open DB", zap.String("error", err.Error()))
+	if !dataStore.storager.DB.IsAlive {
+		logger.Log.Debug("DB is not alive, we don't need to ping")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	defer db.Close()
 
-	err = db.Ping()
+	err := dataStore.storager.DB.DB.Ping()
 	if err != nil {
 		logger.Log.Debug("Can't ping DB", zap.String("error", err.Error()))
 		w.WriteHeader(http.StatusInternalServerError)

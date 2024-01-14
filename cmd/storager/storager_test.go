@@ -15,6 +15,7 @@ func TestStoragerReadAllWriteFile(t *testing.T) {
 		isWithFile: false,
 		URLMap:     make(map[string]string),
 		mu:         sync.RWMutex{},
+		DB:         nil,
 	}
 	savedURL := models.SavedURL{
 		UUID:        1,
