@@ -15,6 +15,13 @@ type DBConnector struct {
 	IsAlive bool
 }
 
+func NewDBConnectorForTest() *DBConnector {
+	return &DBConnector{
+		DB:      nil,
+		IsAlive: false,
+	}
+}
+
 func NewDBConnector(psqlInfo string) *DBConnector {
 	// for local tests can be used "host=localhost port=5432 user=postgres password=example dbname=godb sslmode=disable"
 	db, err := sql.Open("postgres", psqlInfo)

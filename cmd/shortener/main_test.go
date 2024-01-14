@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/theheadmen/urlShort/cmd/dbconnector"
 	config "github.com/theheadmen/urlShort/cmd/serverconfig"
 	"github.com/theheadmen/urlShort/cmd/storager"
 )
@@ -42,7 +43,7 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyVal
 
 func TestSimpleHandler(t *testing.T) {
 	configStore := config.NewConfigStore()
-	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string))
+	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), dbconnector.NewDBConnectorForTest())
 	ts := httptest.NewServer(makeChiServ(configStore, storager))
 	defer ts.Close()
 
@@ -78,7 +79,7 @@ func TestSimpleHandler(t *testing.T) {
 
 func TestJsonPost(t *testing.T) {
 	configStore := config.NewConfigStore()
-	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string))
+	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), dbconnector.NewDBConnectorForTest())
 	ts := httptest.NewServer(makeChiServ(configStore, storager))
 	defer ts.Close()
 
@@ -165,7 +166,7 @@ func TestSequenceHandler(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.testURL, func(t *testing.T) {
-			storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string))
+			storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), dbconnector.NewDBConnectorForTest())
 			dataStore := NewServerDataStore(configStore, storager)
 			// тестим последовательно пост + гет запросы
 			body := strings.NewReader(tc.testURL)
@@ -243,7 +244,7 @@ func TestGenerateShortURL(t *testing.T) {
 
 func TestCompressResponse(t *testing.T) {
 	configStore := config.NewConfigStore()
-	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string))
+	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), dbconnector.NewDBConnectorForTest())
 	dataStore := NewServerDataStore(configStore, storager)
 	r := chi.NewRouter()
 
