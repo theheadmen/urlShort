@@ -65,18 +65,33 @@ func NewDBConnector(psqlInfo string) *DBConnector {
 	}
 }
 
-func (dbConnector *DBConnector) InsertSavedURL(savedURL models.SavedURL) error {
-	sqlStatement := `
-	INSERT INTO urls (id, shortURL, originalURL)
-	VALUES ($1, $2, $3)
-	`
-
-	_, err := dbConnector.DB.Exec(sqlStatement, savedURL.UUID, savedURL.ShortURL, savedURL.OriginalURL)
+func (dbConnector *DBConnector) InsertSavedURLBatch(savedURLs []models.SavedURL) error {
+	tx, err := dbConnector.DB.Begin()
 	if err != nil {
-		logger.Log.Fatal("Failed to write in database", zap.Error(err))
+		logger.Log.Fatal("Failed to initiate transaction for DB", zap.Error(err))
 	}
 
-	logger.Log.Info("Write new data to database", zap.Int("UUID", savedURL.UUID), zap.String("OriginalURL", savedURL.OriginalURL), zap.String("ShortURL", savedURL.ShortURL))
+	stmt, err := tx.Prepare("INSERT INTO urls(shortURL, originalURL) VALUES($1, $2)")
+	if err != nil {
+		logger.Log.Fatal("Failed to prepate query for DB", zap.Error(err))
+	}
+	defer stmt.Close()
+
+	for _, savedURL := range savedURLs {
+		_, err := stmt.Exec(savedURL.ShortURL, savedURL.OriginalURL)
+		if err != nil {
+			tx.Rollback()
+			logger.Log.Fatal("Failed to insert query for DB", zap.Error(err))
+		}
+		logger.Log.Info("Write new data to database", zap.String("OriginalURL", savedURL.OriginalURL), zap.String("ShortURL", savedURL.ShortURL))
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		logger.Log.Fatal("Failed to commit transaction DB", zap.Error(err))
+	}
+
+	logger.Log.Info("Inserted new data to database", zap.Int("count", len(savedURLs)))
 
 	return err
 }

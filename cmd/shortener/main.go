@@ -82,6 +82,7 @@ func makeChiServ(configStore *config.ConfigStore, storager *storager.Storager) c
 	router.Post("/", dataStore.postHandler)
 	router.Post("/api/shorten", dataStore.postJSONHandler)
 	router.Get("/ping", dataStore.pingHandler)
+	router.Post("/api/shorten/batch", dataStore.postBatchJSONHandler)
 	return router
 }
 
@@ -162,7 +163,60 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 		Result: servShortURL + "/" + shortURL,
 	}
 
-	logger.Log.Info("After POST JSON request", zap.String("body", req.URL), zap.String("result", servShortURL+"/"+shortURL), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
+	logger.Log.Info("After POST JSON batch request", zap.String("body", req.URL), zap.String("result", servShortURL+"/"+shortURL), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
+
+	enc := json.NewEncoder(w)
+	if err := enc.Encode(resp); err != nil {
+		logger.Log.Debug("error encoding response", zap.Error(err))
+		return
+	}
+}
+
+func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r *http.Request) {
+	var req []models.BatchRequest
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&req); err != nil {
+		logger.Log.Debug("cannot decode request JSON body", zap.Error(err))
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		return
+	}
+
+	servShortURL := ""
+	// так как в тестах мы не используем флаги, нужно обезопасить себя
+	if dataStore.configStore.FlagShortRunAddr == "" {
+		servShortURL = "http://localhost:8080"
+	} else {
+		servShortURL = dataStore.configStore.FlagShortRunAddr
+	}
+
+	var resp []models.BatchResponse
+	var savedURLs []models.SavedURL
+	for _, request := range req {
+		if request.OriginalURL == "" {
+			logger.Log.Debug("after decoding JSON we don't have any URL")
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			return
+		}
+
+		shortURL := generateShortURL(request.OriginalURL)
+		savedURLs = append(savedURLs, models.SavedURL{
+			UUID:        0, /*не имеет смысла, вставится автоматически потом*/
+			OriginalURL: request.OriginalURL,
+			ShortURL:    shortURL,
+		})
+		resp = append(resp, models.BatchResponse{
+			CorrelationID: request.CorrelationID,
+			ShortURL:      shortURL,
+		})
+		logger.Log.Info("Readed from batch request", zap.String("body", request.OriginalURL), zap.String("result", servShortURL+"/"+shortURL))
+	}
+
+	dataStore.storager.StoreURLBatch(savedURLs)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+
+	logger.Log.Info("After POST JSON request", zap.Int("count", len(resp)), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
 
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(resp); err != nil {

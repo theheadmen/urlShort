@@ -100,9 +100,35 @@ func (storager *Storager) StoreURL(shortURL string, originalURL string) {
 	}
 
 	if storager.DB.IsAlive {
-		storager.DB.InsertSavedURL(savedURL)
+		storager.DB.InsertSavedURLBatch([]models.SavedURL{savedURL})
 	} else if storager.isWithFile {
 		storager.Save(savedURL)
+	}
+}
+
+func (storager *Storager) StoreURLBatch(forStore []models.SavedURL) {
+	var filteredStore []models.SavedURL
+	for _, savedURL := range forStore {
+		_, ok := storager.GetURL(savedURL.ShortURL)
+
+		if ok {
+			logger.Log.Info("We already have data for this url", zap.String("OriginalURL", savedURL.OriginalURL), zap.String("ShortURL", savedURL.ShortURL))
+		} else {
+			storager.mu.Lock()
+			storager.URLMap[savedURL.ShortURL] = savedURL.OriginalURL
+			storager.mu.Unlock()
+			filteredStore = append(filteredStore, savedURL)
+		}
+	}
+	// если у нас уже все и так было вставлено, нам не нужно ничего сохранять
+	if len(filteredStore) != 0 {
+		if storager.DB.IsAlive {
+			storager.DB.InsertSavedURLBatch(filteredStore)
+		} else if storager.isWithFile {
+			for _, savedURL := range filteredStore {
+				storager.Save(savedURL)
+			}
+		}
 	}
 }
 

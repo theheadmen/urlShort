@@ -151,6 +151,74 @@ func TestJsonPost(t *testing.T) {
 	}
 }
 
+func TestJsonBatchPost(t *testing.T) {
+	configStore := config.NewConfigStore()
+	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), dbconnector.NewDBConnectorForTest())
+	ts := httptest.NewServer(makeChiServ(configStore, storager))
+	defer ts.Close()
+
+	testCases := []struct {
+		name         string // добавляем название тестов
+		method       string
+		body         string // добавляем тело запроса в табличные тесты
+		expectedCode int
+		expectedBody string
+	}{
+		{
+			name:         "method_get",
+			method:       http.MethodGet,
+			expectedCode: http.StatusMethodNotAllowed,
+			expectedBody: "",
+		},
+		{
+			name:         "method_put",
+			method:       http.MethodPut,
+			expectedCode: http.StatusMethodNotAllowed,
+			expectedBody: "",
+		},
+		{
+			name:         "method_delete",
+			method:       http.MethodDelete,
+			expectedCode: http.StatusMethodNotAllowed,
+			expectedBody: "",
+		},
+		{
+			name:         "method_post_without_body",
+			method:       http.MethodPost,
+			expectedCode: http.StatusUnprocessableEntity,
+			expectedBody: "",
+		},
+		{
+			name:         "method_post_unsupported_type",
+			method:       http.MethodPost,
+			body:         `{"request": {"type": "idunno", "command": "do something"}, "version": "1.0"}`,
+			expectedCode: http.StatusUnprocessableEntity,
+			expectedBody: "",
+		},
+		{
+			name:         "method_post_success",
+			method:       http.MethodPost,
+			body:         `[{"correlation_id":"u1","original_url":"google.com"},{"correlation_id":"u2","original_url":"ya.ru"}]`,
+			expectedCode: http.StatusCreated,
+			expectedBody: `[{"correlation_id":"u1","short_url":"1MnZAnMm"},{"correlation_id":"u2","short_url":"fE54KN4v"}]`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.method, func(t *testing.T) {
+			testValue := strings.NewReader(tc.body)
+			resp, get := testRequest(t, ts, tc.method, "/api/shorten/batch", testValue)
+			get = strings.TrimSuffix(string(get), "\n")
+			defer resp.Body.Close()
+
+			assert.Equal(t, tc.expectedCode, resp.StatusCode, "Код ответа не совпадает с ожидаемым")
+			if tc.expectedBody != "" {
+				assert.Equal(t, tc.expectedBody, get, "Тело ответа не совпадает с ожидаемым")
+			}
+		})
+	}
+}
+
 func TestSequenceHandler(t *testing.T) {
 	configStore := config.NewConfigStore()
 	testCases := []struct {
