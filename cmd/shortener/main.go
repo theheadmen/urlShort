@@ -230,7 +230,7 @@ func (dataStore *ServerDataStore) getHandler(w http.ResponseWriter, r *http.Requ
 	originalURL, ok := dataStore.storager.GetURL(id)
 
 	if !ok {
-		logger.Log.Debug("cannot find url by id", zap.String("id", id))
+		logger.Log.Info("cannot find url by id", zap.String("id", id))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -243,14 +243,14 @@ func (dataStore *ServerDataStore) getHandler(w http.ResponseWriter, r *http.Requ
 
 func (dataStore *ServerDataStore) pingHandler(w http.ResponseWriter, r *http.Request) {
 	if !dataStore.storager.DB.IsAlive {
-		logger.Log.Debug("DB is not alive, we don't need to ping")
+		logger.Log.Info("DB is not alive, we don't need to ping")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	err := dataStore.storager.DB.DB.Ping()
 	if err != nil {
-		logger.Log.Debug("Can't ping DB", zap.String("error", err.Error()))
+		logger.Log.Info("Can't ping DB", zap.String("error", err.Error()))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
