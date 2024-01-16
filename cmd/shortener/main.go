@@ -206,7 +206,7 @@ func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r 
 		})
 		resp = append(resp, models.BatchResponse{
 			CorrelationID: request.CorrelationID,
-			ShortURL:      shortURL,
+			ShortURL:      servShortURL + "/" + shortURL,
 		})
 		logger.Log.Info("Readed from batch request", zap.String("body", request.OriginalURL), zap.String("result", servShortURL+"/"+shortURL))
 	}

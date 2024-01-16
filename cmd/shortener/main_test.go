@@ -200,7 +200,7 @@ func TestJsonBatchPost(t *testing.T) {
 			method:       http.MethodPost,
 			body:         `[{"correlation_id":"u1","original_url":"google.com"},{"correlation_id":"u2","original_url":"ya.ru"}]`,
 			expectedCode: http.StatusCreated,
-			expectedBody: `[{"correlation_id":"u1","short_url":"1MnZAnMm"},{"correlation_id":"u2","short_url":"fE54KN4v"}]`,
+			expectedBody: `[{"correlation_id":"u1","short_url":"http://localhost:8080/1MnZAnMm"},{"correlation_id":"u2","short_url":"http://localhost:8080/fE54KN4v"}]`,
 		},
 	}
 
