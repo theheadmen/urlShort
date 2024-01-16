@@ -230,6 +230,7 @@ func TestSequenceHandler(t *testing.T) {
 		{testURL: "google.com", expectedShortURL: "1MnZm", returnCode: http.StatusBadRequest},
 		{testURL: "yandex.ru", expectedShortURL: "eeILJFID", returnCode: http.StatusTemporaryRedirect},
 		{testURL: "yandex.ru", expectedShortURL: "eeFID", returnCode: http.StatusBadRequest},
+		{testURL: "http://mct5yhzz7q.yandex/ablfpjxrq", expectedShortURL: "QU5zXC-Z", returnCode: http.StatusTemporaryRedirect},
 	}
 
 	for _, tc := range testCases {

@@ -261,6 +261,6 @@ func (dataStore *ServerDataStore) pingHandler(w http.ResponseWriter, r *http.Req
 
 func generateShortURL(url string) string {
 	hash := sha256.Sum256([]byte(url))
-	encoded := base64.URLEncoding.EncodeToString(hash[:])
+	encoded := base64.RawURLEncoding.EncodeToString(hash[:])
 	return encoded[:8]
 }
