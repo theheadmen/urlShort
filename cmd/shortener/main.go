@@ -112,10 +112,14 @@ func (dataStore *ServerDataStore) postHandler(w http.ResponseWriter, r *http.Req
 
 	shortURL := generateShortURL(url)
 
-	dataStore.storager.StoreURL(shortURL, url)
+	isAlreadyStored := dataStore.storager.StoreURL(shortURL, url)
 
 	w.Header().Set("Content-Type", "text/html")
-	w.WriteHeader(http.StatusCreated)
+	headerStatus := http.StatusCreated
+	if isAlreadyStored {
+		headerStatus = http.StatusConflict
+	}
+	w.WriteHeader(headerStatus)
 	servShortURL := ""
 	// так как в тестах мы не используем флаги, нужно обезопасить себя
 	if dataStore.configStore.FlagShortRunAddr == "" {
@@ -146,10 +150,14 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 
 	shortURL := generateShortURL(req.URL)
 
-	dataStore.storager.StoreURL(shortURL, req.URL)
+	isAlreadyStored := dataStore.storager.StoreURL(shortURL, req.URL)
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
+	headerStatus := http.StatusCreated
+	if isAlreadyStored {
+		headerStatus = http.StatusConflict
+	}
+	w.WriteHeader(headerStatus)
 	servShortURL := ""
 	// так как в тестах мы не используем флаги, нужно обезопасить себя
 	if dataStore.configStore.FlagShortRunAddr == "" {

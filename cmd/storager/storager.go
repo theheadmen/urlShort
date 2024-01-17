@@ -81,12 +81,13 @@ func (storager *Storager) ReadAllDataFromFile() error {
 	return err
 }
 
-func (storager *Storager) StoreURL(shortURL string, originalURL string) {
+// возвращает true если это значение уже было записано ранее
+func (storager *Storager) StoreURL(shortURL string, originalURL string) bool {
 	_, ok := storager.GetURL(shortURL)
 
 	if ok {
 		logger.Log.Info("We already have data for this url", zap.String("OriginalURL", originalURL), zap.String("ShortURL", shortURL))
-		return
+		return true
 	}
 
 	storager.mu.Lock()
@@ -104,6 +105,7 @@ func (storager *Storager) StoreURL(shortURL string, originalURL string) {
 	} else if storager.isWithFile {
 		storager.Save(savedURL)
 	}
+	return false
 }
 
 func (storager *Storager) StoreURLBatch(forStore []models.SavedURL) {
