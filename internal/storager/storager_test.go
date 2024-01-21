@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/theheadmen/urlShort/cmd/models"
+	"github.com/theheadmen/urlShort/internal/models"
 )
 
 func TestStoragerReadAllWriteFile(t *testing.T) {

@@ -2,20 +2,24 @@ package main
 
 import (
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
-	"github.com/theheadmen/urlShort/cmd/dbconnector"
-	"github.com/theheadmen/urlShort/cmd/logger"
-	"github.com/theheadmen/urlShort/cmd/models"
-	config "github.com/theheadmen/urlShort/cmd/serverconfig"
-	"github.com/theheadmen/urlShort/cmd/storager"
+	"github.com/theheadmen/urlShort/internal/dbconnector"
+	"github.com/theheadmen/urlShort/internal/logger"
+	"github.com/theheadmen/urlShort/internal/models"
+	config "github.com/theheadmen/urlShort/internal/serverconfig"
+	"github.com/theheadmen/urlShort/internal/storager"
 	"go.uber.org/zap"
 
 	"github.com/go-chi/chi"
@@ -40,19 +44,36 @@ func main() {
 	configStore := config.NewConfigStore()
 	configStore.ParseFlags()
 
+	// Create a context that can be cancelled
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	if err := logger.Initialize(configStore.FlagLogLevel); err != nil {
 		panic(err)
 	}
 	logger.Log.Info("Running server", zap.String("address", configStore.FlagRunAddr), zap.String("short address", configStore.FlagShortRunAddr), zap.String("file", configStore.FlagFile))
-	dbConnector := dbconnector.NewDBConnector(configStore.FlagDB)
+	dbConnector, _ := dbconnector.NewDBConnector(ctx, configStore.FlagDB)
 	storager := storager.NewStorager(configStore.FlagFile, true /*isWithFile*/, make(map[string]string), dbConnector)
-	storager.ReadAllData()
+	storager.ReadAllData(ctx)
 
-	err := http.ListenAndServe(configStore.FlagRunAddr, makeChiServ(configStore, storager))
-	if err != nil {
-		logger.Log.Fatal("Server is down", zap.String("address", err.Error()))
-		panic(err)
+	// Create a new chi router
+	router := makeChiServ(configStore, storager)
+
+	// Create a new server
+	server := &http.Server{
+		Addr:    configStore.FlagRunAddr,
+		Handler: router,
 	}
+
+	// Start the server in a goroutine
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Log.Fatal("Server is down", zap.String("error", err.Error()))
+		}
+	}()
+
+	// Block until we receive a signal or the context is cancelled
+	<-ctx.Done()
 }
 
 func makeChiServ(configStore *config.ConfigStore, storager *storager.Storager) chi.Router {
@@ -112,7 +133,7 @@ func (dataStore *ServerDataStore) postHandler(w http.ResponseWriter, r *http.Req
 
 	shortURL := generateShortURL(url)
 
-	isAlreadyStored := dataStore.storager.StoreURL(shortURL, url)
+	isAlreadyStored := dataStore.storager.StoreURL(r.Context(), shortURL, url)
 
 	w.Header().Set("Content-Type", "text/html")
 	headerStatus := http.StatusCreated
@@ -150,7 +171,7 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 
 	shortURL := generateShortURL(req.URL)
 
-	isAlreadyStored := dataStore.storager.StoreURL(shortURL, req.URL)
+	isAlreadyStored := dataStore.storager.StoreURL(r.Context(), shortURL, req.URL)
 
 	w.Header().Set("Content-Type", "application/json")
 	headerStatus := http.StatusCreated
@@ -219,7 +240,7 @@ func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r 
 		logger.Log.Info("Readed from batch request", zap.String("body", request.OriginalURL), zap.String("result", servShortURL+"/"+shortURL))
 	}
 
-	dataStore.storager.StoreURLBatch(savedURLs)
+	dataStore.storager.StoreURLBatch(r.Context(), savedURLs)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -250,13 +271,13 @@ func (dataStore *ServerDataStore) getHandler(w http.ResponseWriter, r *http.Requ
 }
 
 func (dataStore *ServerDataStore) pingHandler(w http.ResponseWriter, r *http.Request) {
-	if !dataStore.storager.DB.IsAlive {
+	if dataStore.storager.DB == nil {
 		logger.Log.Info("DB is not alive, we don't need to ping")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	err := dataStore.storager.DB.DB.Ping()
+	err := dataStore.storager.DB.DB.PingContext(r.Context())
 	if err != nil {
 		logger.Log.Info("Can't ping DB", zap.String("error", err.Error()))
 		w.WriteHeader(http.StatusInternalServerError)

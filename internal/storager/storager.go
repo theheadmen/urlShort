@@ -2,13 +2,14 @@ package storager
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"os"
 	"sync"
 
-	"github.com/theheadmen/urlShort/cmd/dbconnector"
-	"github.com/theheadmen/urlShort/cmd/logger"
-	"github.com/theheadmen/urlShort/cmd/models"
+	"github.com/theheadmen/urlShort/internal/dbconnector"
+	"github.com/theheadmen/urlShort/internal/logger"
+	"github.com/theheadmen/urlShort/internal/models"
 	"go.uber.org/zap"
 )
 
@@ -30,9 +31,9 @@ func NewStorager(filePath string, isWithFile bool, URLMap map[string]string, dbC
 	}
 }
 
-func (storager *Storager) ReadAllData() error {
-	if storager.DB.IsAlive {
-		urls, err := storager.DB.SelectAllSavedURLs()
+func (storager *Storager) ReadAllData(ctx context.Context) error {
+	if storager.DB != nil {
+		urls, err := storager.DB.SelectAllSavedURLs(ctx)
 		if err != nil {
 			logger.Log.Fatal("Failed to read from database", zap.Error(err))
 			return err
@@ -82,7 +83,7 @@ func (storager *Storager) ReadAllDataFromFile() error {
 }
 
 // возвращает true если это значение уже было записано ранее
-func (storager *Storager) StoreURL(shortURL string, originalURL string) bool {
+func (storager *Storager) StoreURL(ctx context.Context, shortURL string, originalURL string) bool {
 	_, ok := storager.GetURL(shortURL)
 
 	if ok {
@@ -100,15 +101,15 @@ func (storager *Storager) StoreURL(shortURL string, originalURL string) bool {
 		OriginalURL: originalURL,
 	}
 
-	if storager.DB.IsAlive {
-		storager.DB.InsertSavedURLBatch([]models.SavedURL{savedURL})
+	if storager.DB != nil {
+		storager.DB.InsertSavedURLBatch(ctx, []models.SavedURL{savedURL})
 	} else if storager.isWithFile {
 		storager.Save(savedURL)
 	}
 	return false
 }
 
-func (storager *Storager) StoreURLBatch(forStore []models.SavedURL) {
+func (storager *Storager) StoreURLBatch(ctx context.Context, forStore []models.SavedURL) {
 	var filteredStore []models.SavedURL
 	for _, savedURL := range forStore {
 		_, ok := storager.GetURL(savedURL.ShortURL)
@@ -124,8 +125,8 @@ func (storager *Storager) StoreURLBatch(forStore []models.SavedURL) {
 	}
 	// если у нас уже все и так было вставлено, нам не нужно ничего сохранять
 	if len(filteredStore) != 0 {
-		if storager.DB.IsAlive {
-			storager.DB.InsertSavedURLBatch(filteredStore)
+		if storager.DB != nil {
+			storager.DB.InsertSavedURLBatch(ctx, filteredStore)
 		} else if storager.isWithFile {
 			for _, savedURL := range filteredStore {
 				storager.Save(savedURL)
