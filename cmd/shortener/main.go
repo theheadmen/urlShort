@@ -31,7 +31,7 @@ func main() {
 	logger.Log.Info("Running server", zap.String("address", configStore.FlagRunAddr), zap.String("short address", configStore.FlagShortRunAddr), zap.String("file", configStore.FlagFile))
 	dbConnector, err := dbconnector.NewDBConnector(ctx, configStore.FlagDB)
 	if err != nil {
-		panic(err)
+		logger.Log.Debug("Can't open stable connection with DB", zap.String("error", err.Error()))
 	}
 	storager := storager.NewStorager(configStore.FlagFile, true /*isWithFile*/, make(map[string]string), dbConnector, ctx)
 

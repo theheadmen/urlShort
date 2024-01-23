@@ -29,7 +29,10 @@ func NewStorager(filePath string, isWithFile bool, URLMap map[string]string, dbC
 		mu:         sync.RWMutex{},
 		DB:         dbConnector,
 	}
-	storager.ReadAllData(ctx)
+	err := storager.readAllData(ctx)
+	if err != nil {
+		logger.Log.Fatal("Failed to read data", zap.Error(err))
+	}
 	return storager
 }
 
@@ -43,7 +46,7 @@ func NewStoragerWithoutReadingData(filePath string, isWithFile bool, URLMap map[
 	}
 }
 
-func (storager *Storager) ReadAllData(ctx context.Context) error {
+func (storager *Storager) readAllData(ctx context.Context) error {
 	if storager.DB != nil {
 		urls, err := storager.DB.SelectAllSavedURLs(ctx)
 		if err != nil {
