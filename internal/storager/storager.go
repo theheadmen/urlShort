@@ -31,7 +31,7 @@ func NewStorager(filePath string, isWithFile bool, URLMap map[string]string, dbC
 	}
 	err := storager.readAllData(ctx)
 	if err != nil {
-		logger.Log.Fatal("Failed to read data", zap.Error(err))
+		logger.Log.Info("Failed to read data", zap.Error(err))
 	}
 	return storager
 }

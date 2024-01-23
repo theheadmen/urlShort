@@ -28,7 +28,7 @@ func main() {
 	if err := logger.Initialize(configStore.FlagLogLevel); err != nil {
 		panic(err)
 	}
-	logger.Log.Info("Running server", zap.String("address", configStore.FlagRunAddr), zap.String("short address", configStore.FlagShortRunAddr), zap.String("file", configStore.FlagFile))
+	logger.Log.Info("Running server", zap.String("address", configStore.FlagRunAddr), zap.String("short address", configStore.FlagShortRunAddr), zap.String("file", configStore.FlagFile), zap.String("db", configStore.FlagDB))
 	dbConnector, err := dbconnector.NewDBConnector(ctx, configStore.FlagDB)
 	if err != nil {
 		logger.Log.Debug("Can't open stable connection with DB", zap.String("error", err.Error()))
