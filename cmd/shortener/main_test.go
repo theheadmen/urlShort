@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/theheadmen/urlShort/internal/serverapi"
 	config "github.com/theheadmen/urlShort/internal/serverconfig"
 	"github.com/theheadmen/urlShort/internal/storager"
 )
@@ -42,8 +43,8 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyVal
 
 func TestSimpleHandler(t *testing.T) {
 	configStore := config.NewConfigStore()
-	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), nil /*dbconnector*/)
-	ts := httptest.NewServer(makeChiServ(configStore, storager))
+	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), nil /*dbconnector*/)
+	ts := httptest.NewServer(serverapi.MakeChiServ(configStore, storager))
 	defer ts.Close()
 
 	testCases := []struct {
@@ -78,8 +79,8 @@ func TestSimpleHandler(t *testing.T) {
 
 func TestJsonPost(t *testing.T) {
 	configStore := config.NewConfigStore()
-	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), nil /*dbconnector*/)
-	ts := httptest.NewServer(makeChiServ(configStore, storager))
+	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), nil /*dbconnector*/)
+	ts := httptest.NewServer(serverapi.MakeChiServ(configStore, storager))
 	defer ts.Close()
 
 	testCases := []struct {
@@ -152,8 +153,8 @@ func TestJsonPost(t *testing.T) {
 
 func TestJsonBatchPost(t *testing.T) {
 	configStore := config.NewConfigStore()
-	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), nil /*dbconnector*/)
-	ts := httptest.NewServer(makeChiServ(configStore, storager))
+	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), nil /*dbconnector*/)
+	ts := httptest.NewServer(serverapi.MakeChiServ(configStore, storager))
 	defer ts.Close()
 
 	testCases := []struct {
@@ -234,8 +235,8 @@ func TestSequenceHandler(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.testURL, func(t *testing.T) {
-			storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), nil /*dbconnector*/)
-			dataStore := NewServerDataStore(configStore, storager)
+			storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), nil /*dbconnector*/)
+			dataStore := serverapi.NewServerDataStore(configStore, storager)
 			// тестим последовательно пост + гет запросы
 			body := strings.NewReader(tc.testURL)
 
@@ -246,10 +247,10 @@ func TestSequenceHandler(t *testing.T) {
 			recorder1 := httptest.NewRecorder()
 			recorder2 := httptest.NewRecorder()
 
-			handlerFunc := http.HandlerFunc(dataStore.postHandler)
+			handlerFunc := http.HandlerFunc(dataStore.PostHandler)
 			handlerFunc.ServeHTTP(recorder1, req1)
 
-			handlerFunc2 := http.HandlerFunc(dataStore.getHandler)
+			handlerFunc2 := http.HandlerFunc(dataStore.GetHandler)
 			handlerFunc2.ServeHTTP(recorder2, req2)
 
 			// сначала проверка что post сработал
@@ -305,19 +306,19 @@ func TestGenerateShortURL(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			assert.Equal(t, generateShortURL(test.value), test.want)
+			assert.Equal(t, serverapi.GenerateShortURL(test.value), test.want)
 		})
 	}
 }
 
 func TestCompressResponse(t *testing.T) {
 	configStore := config.NewConfigStore()
-	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), nil /*dbconnector*/)
-	dataStore := NewServerDataStore(configStore, storager)
+	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), nil /*dbconnector*/)
+	dataStore := serverapi.NewServerDataStore(configStore, storager)
 	r := chi.NewRouter()
 
 	r.Use(middleware.Compress(5, "text/html", "application/json"))
-	r.Post("/", dataStore.postHandler)
+	r.Post("/", dataStore.PostHandler)
 
 	t.Run("with Accept-Encoding", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/", strings.NewReader("google.com"))

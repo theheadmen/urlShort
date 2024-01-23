@@ -21,7 +21,19 @@ type Storager struct {
 	DB         *dbconnector.DBConnector
 }
 
-func NewStorager(filePath string, isWithFile bool, URLMap map[string]string, dbConnector *dbconnector.DBConnector) *Storager {
+func NewStorager(filePath string, isWithFile bool, URLMap map[string]string, dbConnector *dbconnector.DBConnector, ctx context.Context) *Storager {
+	storager := &Storager{
+		filePath:   filePath,
+		isWithFile: isWithFile,
+		URLMap:     URLMap,
+		mu:         sync.RWMutex{},
+		DB:         dbConnector,
+	}
+	storager.ReadAllData(ctx)
+	return storager
+}
+
+func NewStoragerWithoutReadingData(filePath string, isWithFile bool, URLMap map[string]string, dbConnector *dbconnector.DBConnector) *Storager {
 	return &Storager{
 		filePath:   filePath,
 		isWithFile: isWithFile,
