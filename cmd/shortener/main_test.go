@@ -12,8 +12,9 @@ import (
 	"github.com/go-chi/chi/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	config "github.com/theheadmen/urlShort/cmd/serverconfig"
-	"github.com/theheadmen/urlShort/cmd/storager"
+	"github.com/theheadmen/urlShort/internal/serverapi"
+	config "github.com/theheadmen/urlShort/internal/serverconfig"
+	"github.com/theheadmen/urlShort/internal/storager"
 )
 
 func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyValue io.Reader) (*http.Response, string) {
@@ -42,8 +43,8 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyVal
 
 func TestSimpleHandler(t *testing.T) {
 	configStore := config.NewConfigStore()
-	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string))
-	ts := httptest.NewServer(makeChiServ(configStore, storager))
+	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), nil /*dbconnector*/)
+	ts := httptest.NewServer(serverapi.MakeChiServ(configStore, storager))
 	defer ts.Close()
 
 	testCases := []struct {
@@ -78,8 +79,8 @@ func TestSimpleHandler(t *testing.T) {
 
 func TestJsonPost(t *testing.T) {
 	configStore := config.NewConfigStore()
-	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string))
-	ts := httptest.NewServer(makeChiServ(configStore, storager))
+	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), nil /*dbconnector*/)
+	ts := httptest.NewServer(serverapi.MakeChiServ(configStore, storager))
 	defer ts.Close()
 
 	testCases := []struct {
@@ -150,6 +151,74 @@ func TestJsonPost(t *testing.T) {
 	}
 }
 
+func TestJsonBatchPost(t *testing.T) {
+	configStore := config.NewConfigStore()
+	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), nil /*dbconnector*/)
+	ts := httptest.NewServer(serverapi.MakeChiServ(configStore, storager))
+	defer ts.Close()
+
+	testCases := []struct {
+		name         string // добавляем название тестов
+		method       string
+		body         string // добавляем тело запроса в табличные тесты
+		expectedCode int
+		expectedBody string
+	}{
+		{
+			name:         "method_get",
+			method:       http.MethodGet,
+			expectedCode: http.StatusMethodNotAllowed,
+			expectedBody: "",
+		},
+		{
+			name:         "method_put",
+			method:       http.MethodPut,
+			expectedCode: http.StatusMethodNotAllowed,
+			expectedBody: "",
+		},
+		{
+			name:         "method_delete",
+			method:       http.MethodDelete,
+			expectedCode: http.StatusMethodNotAllowed,
+			expectedBody: "",
+		},
+		{
+			name:         "method_post_without_body",
+			method:       http.MethodPost,
+			expectedCode: http.StatusUnprocessableEntity,
+			expectedBody: "",
+		},
+		{
+			name:         "method_post_unsupported_type",
+			method:       http.MethodPost,
+			body:         `{"request": {"type": "idunno", "command": "do something"}, "version": "1.0"}`,
+			expectedCode: http.StatusUnprocessableEntity,
+			expectedBody: "",
+		},
+		{
+			name:         "method_post_success",
+			method:       http.MethodPost,
+			body:         `[{"correlation_id":"u1","original_url":"google.com"},{"correlation_id":"u2","original_url":"ya.ru"}]`,
+			expectedCode: http.StatusCreated,
+			expectedBody: `[{"correlation_id":"u1","short_url":"http://localhost:8080/1MnZAnMm"},{"correlation_id":"u2","short_url":"http://localhost:8080/fE54KN4v"}]`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.method, func(t *testing.T) {
+			testValue := strings.NewReader(tc.body)
+			resp, get := testRequest(t, ts, tc.method, "/api/shorten/batch", testValue)
+			get = strings.TrimSuffix(string(get), "\n")
+			defer resp.Body.Close()
+
+			assert.Equal(t, tc.expectedCode, resp.StatusCode, "Код ответа не совпадает с ожидаемым")
+			if tc.expectedBody != "" {
+				assert.Equal(t, tc.expectedBody, get, "Тело ответа не совпадает с ожидаемым")
+			}
+		})
+	}
+}
+
 func TestSequenceHandler(t *testing.T) {
 	configStore := config.NewConfigStore()
 	testCases := []struct {
@@ -161,12 +230,13 @@ func TestSequenceHandler(t *testing.T) {
 		{testURL: "google.com", expectedShortURL: "1MnZm", returnCode: http.StatusBadRequest},
 		{testURL: "yandex.ru", expectedShortURL: "eeILJFID", returnCode: http.StatusTemporaryRedirect},
 		{testURL: "yandex.ru", expectedShortURL: "eeFID", returnCode: http.StatusBadRequest},
+		{testURL: "http://mct5yhzz7q.yandex/ablfpjxrq", expectedShortURL: "QU5zXC-Z", returnCode: http.StatusTemporaryRedirect},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.testURL, func(t *testing.T) {
-			storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string))
-			dataStore := NewServerDataStore(configStore, storager)
+			storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), nil /*dbconnector*/)
+			dataStore := serverapi.NewServerDataStore(configStore, storager)
 			// тестим последовательно пост + гет запросы
 			body := strings.NewReader(tc.testURL)
 
@@ -177,10 +247,10 @@ func TestSequenceHandler(t *testing.T) {
 			recorder1 := httptest.NewRecorder()
 			recorder2 := httptest.NewRecorder()
 
-			handlerFunc := http.HandlerFunc(dataStore.postHandler)
+			handlerFunc := http.HandlerFunc(dataStore.PostHandler)
 			handlerFunc.ServeHTTP(recorder1, req1)
 
-			handlerFunc2 := http.HandlerFunc(dataStore.getHandler)
+			handlerFunc2 := http.HandlerFunc(dataStore.GetHandler)
 			handlerFunc2.ServeHTTP(recorder2, req2)
 
 			// сначала проверка что post сработал
@@ -236,19 +306,19 @@ func TestGenerateShortURL(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			assert.Equal(t, generateShortURL(test.value), test.want)
+			assert.Equal(t, serverapi.GenerateShortURL(test.value), test.want)
 		})
 	}
 }
 
 func TestCompressResponse(t *testing.T) {
 	configStore := config.NewConfigStore()
-	storager := storager.NewStorager(configStore.FlagFile, false /*isWithFile*/, make(map[string]string))
-	dataStore := NewServerDataStore(configStore, storager)
+	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[string]string), nil /*dbconnector*/)
+	dataStore := serverapi.NewServerDataStore(configStore, storager)
 	r := chi.NewRouter()
 
 	r.Use(middleware.Compress(5, "text/html", "application/json"))
-	r.Post("/", dataStore.postHandler)
+	r.Post("/", dataStore.PostHandler)
 
 	t.Run("with Accept-Encoding", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/", strings.NewReader("google.com"))

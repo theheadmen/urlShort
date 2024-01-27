@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/theheadmen/urlShort/cmd/models"
+	"github.com/theheadmen/urlShort/internal/models"
 )
 
 func TestStoragerReadAllWriteFile(t *testing.T) {
@@ -15,6 +15,7 @@ func TestStoragerReadAllWriteFile(t *testing.T) {
 		isWithFile: false,
 		URLMap:     make(map[string]string),
 		mu:         sync.RWMutex{},
+		DB:         nil,
 	}
 	savedURL := models.SavedURL{
 		UUID:        1,
