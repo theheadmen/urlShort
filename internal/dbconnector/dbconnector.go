@@ -153,8 +153,8 @@ func (dbConnector *DBConnector) SelectSavedURLsForUserID(ctx context.Context, us
 	return savedURLs, err
 }
 
-// GetOrInsertId checks if the table is empty and inserts a default value if it is.
-func (dbConnector *DBConnector) GetOrInsertId(ctx context.Context) (int, error) {
+// GetOrInsertID checks if the table is empty and inserts a default value if it is.
+func (dbConnector *DBConnector) GetOrInsertID(ctx context.Context) (int, error) {
 	// Insert a default value if the table is empty
 	_, err := dbConnector.DB.ExecContext(ctx, "INSERT INTO last_user_id (id) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM last_user_id)")
 	if err != nil {
@@ -171,9 +171,9 @@ func (dbConnector *DBConnector) GetOrInsertId(ctx context.Context) (int, error) 
 	return id, nil
 }
 
-// IncrementId increments the value in the table by 1 and returns the new value.
-func (dbConnector *DBConnector) IncrementId(ctx context.Context) (int, error) {
-	var newId int
+// IncrementID increments the value in the table by 1 and returns the new value.
+func (dbConnector *DBConnector) IncrementID(ctx context.Context) (int, error) {
+	var newID int
 	err := dbConnector.DB.QueryRowContext(ctx, `
 		WITH updated AS (
 			UPDATE last_user_id
@@ -183,10 +183,10 @@ func (dbConnector *DBConnector) IncrementId(ctx context.Context) (int, error) {
 		SELECT id FROM updated
 		UNION ALL
 		SELECT id FROM last_user_id WHERE NOT EXISTS (SELECT 1 FROM updated)
-	`).Scan(&newId)
+	`).Scan(&newID)
 	if err != nil {
 		return 0, err
 	}
 
-	return newId, nil
+	return newID, nil
 }

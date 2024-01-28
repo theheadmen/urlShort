@@ -14,7 +14,7 @@ func TestStoragerReadAllWriteFile(t *testing.T) {
 	storager := Storager{
 		filePath:   fname,
 		isWithFile: false,
-		URLMap:     make(map[UrlMapKey]string),
+		URLMap:     make(map[URLMapKey]string),
 		mu:         sync.RWMutex{},
 		DB:         nil,
 		lastUserID: userID,

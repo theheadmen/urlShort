@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type UrlMapKey struct {
+type URLMapKey struct {
 	shortURL string
 	userID   int
 }
@@ -21,13 +21,13 @@ type UrlMapKey struct {
 type Storager struct {
 	filePath   string
 	isWithFile bool
-	URLMap     map[UrlMapKey]string
+	URLMap     map[URLMapKey]string
 	mu         sync.RWMutex
 	DB         *dbconnector.DBConnector
 	lastUserID int
 }
 
-func NewStorager(filePath string, isWithFile bool, URLMap map[UrlMapKey]string, dbConnector *dbconnector.DBConnector, ctx context.Context) *Storager {
+func NewStorager(filePath string, isWithFile bool, URLMap map[URLMapKey]string, dbConnector *dbconnector.DBConnector, ctx context.Context) *Storager {
 	storager := &Storager{
 		filePath:   filePath,
 		isWithFile: isWithFile,
@@ -43,7 +43,7 @@ func NewStorager(filePath string, isWithFile bool, URLMap map[UrlMapKey]string, 
 	return storager
 }
 
-func NewStoragerWithoutReadingData(filePath string, isWithFile bool, URLMap map[UrlMapKey]string, dbConnector *dbconnector.DBConnector) *Storager {
+func NewStoragerWithoutReadingData(filePath string, isWithFile bool, URLMap map[URLMapKey]string, dbConnector *dbconnector.DBConnector) *Storager {
 	return &Storager{
 		filePath:   filePath,
 		isWithFile: isWithFile,
@@ -63,7 +63,7 @@ func (storager *Storager) readAllData(ctx context.Context) error {
 		}
 
 		for _, url := range urls {
-			storager.URLMap[UrlMapKey{url.ShortURL, url.UserID}] = url.OriginalURL
+			storager.URLMap[URLMapKey{url.ShortURL, url.UserID}] = url.OriginalURL
 			logger.Log.Info("Read new data from database", zap.Int("UUID", url.UUID), zap.String("OriginalURL", url.OriginalURL), zap.String("ShortURL", url.ShortURL), zap.Int("UserID", url.UserID))
 		}
 
@@ -96,7 +96,7 @@ func (storager *Storager) ReadAllDataFromFile() error {
 		if err != nil {
 			logger.Log.Debug("Failed unmarshal data", zap.Error(err))
 		}
-		storager.URLMap[UrlMapKey{result.ShortURL, result.UserID}] = result.OriginalURL
+		storager.URLMap[URLMapKey{result.ShortURL, result.UserID}] = result.OriginalURL
 		if result.UserID > curMax {
 			curMax = result.UserID
 		}
@@ -171,7 +171,7 @@ func (storager *Storager) StoreURL(ctx context.Context, shortURL string, origina
 	}
 
 	storager.mu.Lock()
-	storager.URLMap[UrlMapKey{shortURL, userID}] = originalURL
+	storager.URLMap[URLMapKey{shortURL, userID}] = originalURL
 	storager.mu.Unlock()
 
 	savedURL := models.SavedURL{
@@ -198,7 +198,7 @@ func (storager *Storager) StoreURLBatch(ctx context.Context, forStore []models.S
 			logger.Log.Info("We already have data for this url", zap.String("OriginalURL", savedURL.OriginalURL), zap.String("ShortURL", savedURL.ShortURL), zap.Int("UserID", userID))
 		} else {
 			storager.mu.Lock()
-			storager.URLMap[UrlMapKey{savedURL.ShortURL, userID}] = savedURL.OriginalURL
+			storager.URLMap[URLMapKey{savedURL.ShortURL, userID}] = savedURL.OriginalURL
 			storager.mu.Unlock()
 			filteredStore = append(filteredStore, savedURL)
 		}
@@ -239,7 +239,7 @@ func (storager *Storager) Save(savedURL models.SavedURL) error {
 
 func (storager *Storager) GetURL(shortURL string, userID int) (string, bool) {
 	storager.mu.RLock()
-	originalURL, ok := storager.URLMap[UrlMapKey{shortURL, userID}]
+	originalURL, ok := storager.URLMap[URLMapKey{shortURL, userID}]
 	storager.mu.RUnlock()
 
 	return originalURL, ok
@@ -247,7 +247,7 @@ func (storager *Storager) GetURL(shortURL string, userID int) (string, bool) {
 
 func (storager *Storager) GetLastUserID(ctx context.Context) (int, error) {
 	if storager.DB != nil {
-		lastUserID, err := storager.DB.IncrementId(ctx)
+		lastUserID, err := storager.DB.IncrementID(ctx)
 		if err != nil {
 			logger.Log.Fatal("Failed to read last user id from database", zap.Error(err))
 			return lastUserID, err
