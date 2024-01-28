@@ -17,6 +17,8 @@ import (
 	_ "github.com/lib/pq"
 )
 
+// for test
+// go run . -a ":8081" -b "http://localhost:8081" -d "host=localhost port=5432 user=postgres password=example dbname=godb sslmode=disable"
 func main() {
 	configStore := config.NewConfigStore()
 	configStore.ParseFlags()
@@ -33,7 +35,7 @@ func main() {
 	if err != nil {
 		logger.Log.Debug("Can't open stable connection with DB", zap.String("error", err.Error()))
 	}
-	storager := storager.NewStorager(configStore.FlagFile, true /*isWithFile*/, make(map[string]string), dbConnector, ctx)
+	storager := storager.NewStorager(configStore.FlagFile, true /*isWithFile*/, make(map[storager.UrlMapKey]string), dbConnector, ctx)
 
 	// Create a new chi router
 	router := serverapi.MakeChiServ(configStore, storager)

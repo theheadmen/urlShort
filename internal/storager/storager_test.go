@@ -10,17 +10,20 @@ import (
 
 func TestStoragerReadAllWriteFile(t *testing.T) {
 	fname := `settings.json`
+	userID := 1
 	storager := Storager{
 		filePath:   fname,
 		isWithFile: false,
-		URLMap:     make(map[string]string),
+		URLMap:     make(map[UrlMapKey]string),
 		mu:         sync.RWMutex{},
 		DB:         nil,
+		lastUserID: userID,
 	}
 	savedURL := models.SavedURL{
 		UUID:        1,
 		ShortURL:    `ShortURL`,
 		OriginalURL: `OriginalURL`,
+		UserID:      userID,
 	}
 	if err := storager.Save(savedURL); err != nil {
 		t.Error(err)
@@ -29,7 +32,7 @@ func TestStoragerReadAllWriteFile(t *testing.T) {
 	if err := storager.ReadAllDataFromFile(); err != nil {
 		t.Error(err)
 	}
-	originalURL, ok := storager.GetURL("ShortURL")
+	originalURL, ok := storager.GetURL("ShortURL", userID)
 	if !ok {
 		t.Errorf(`Не нашли url для %+s`, "ShortURL")
 	}

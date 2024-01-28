@@ -8,17 +8,30 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/theheadmen/urlShort/internal/logger"
 	"github.com/theheadmen/urlShort/internal/models"
 	config "github.com/theheadmen/urlShort/internal/serverconfig"
 	"github.com/theheadmen/urlShort/internal/storager"
 	"go.uber.org/zap"
 )
+
+const (
+	jwtSecretKey = "my-jwt-secret-key"
+	jwtCookieKey = "token"
+)
+
+// UserClaims is a custom JWT claims structure
+type UserClaims struct {
+	UserID string `json:"userID"`
+	jwt.RegisteredClaims
+}
 
 type ServerDataStore struct {
 	configStore config.ConfigStore
@@ -38,6 +51,8 @@ func MakeChiServ(configStore *config.ConfigStore, storager *storager.Storager) c
 
 	// Add gzip middleware
 	router.Use(middleware.Compress(5, "text/html", "application/json"))
+	// cookie middleware
+	router.Use(dataStore.authMiddleware)
 	// Add the logger middleware
 	router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +75,7 @@ func MakeChiServ(configStore *config.ConfigStore, storager *storager.Storager) c
 	router.Post("/api/shorten", dataStore.postJSONHandler)
 	router.Get("/ping", dataStore.pingHandler)
 	router.Post("/api/shorten/batch", dataStore.postBatchJSONHandler)
+	router.Get("/api/user/urls", dataStore.getByUserIDHandler)
 	return router
 }
 
@@ -87,9 +103,28 @@ func (dataStore *ServerDataStore) PostHandler(w http.ResponseWriter, r *http.Req
 		url = string(decompressed)
 	}
 
+	cookie, err := r.Cookie(jwtCookieKey)
+	// If any other error occurred, return a bad request error
+	if err != nil {
+		logger.Log.Info("cannot find cookie", zap.Error(err))
+		for _, cookie := range r.Cookies() {
+
+			logger.Log.Info("cookie that we have", zap.String("name", cookie.Name), zap.String("Value", cookie.Value))
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	token, userID, err := getTokenAndUserId(cookie)
+	if err != nil || !token.Valid {
+		logger.Log.Info("cannot find cookie", zap.Error(err))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
 	shortURL := GenerateShortURL(url)
 
-	isAlreadyStored := dataStore.storager.StoreURL(r.Context(), shortURL, url)
+	isAlreadyStored := dataStore.storager.StoreURL(r.Context(), shortURL, url, userID)
 
 	w.Header().Set("Content-Type", "text/html")
 	headerStatus := http.StatusCreated
@@ -105,7 +140,7 @@ func (dataStore *ServerDataStore) PostHandler(w http.ResponseWriter, r *http.Req
 		servShortURL = dataStore.configStore.FlagShortRunAddr
 	}
 
-	logger.Log.Info("After POST request", zap.String("body", url), zap.String("result", servShortURL+"/"+shortURL), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
+	logger.Log.Info("After POST request", zap.String("body", url), zap.String("result", servShortURL+"/"+shortURL), zap.Int("userID", userID), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
 
 	fmt.Fprintf(w, servShortURL+"/%s", shortURL)
 }
@@ -125,9 +160,24 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 		return
 	}
 
+	cookie, err := r.Cookie(jwtCookieKey)
+	// If any other error occurred, return a bad request error
+	if err != nil {
+		logger.Log.Info("cannot find cookie", zap.Error(err))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	token, userID, err := getTokenAndUserId(cookie)
+	if err != nil || !token.Valid {
+		logger.Log.Info("cannot find cookie", zap.Error(err))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
 	shortURL := GenerateShortURL(req.URL)
 
-	isAlreadyStored := dataStore.storager.StoreURL(r.Context(), shortURL, req.URL)
+	isAlreadyStored := dataStore.storager.StoreURL(r.Context(), shortURL, req.URL, userID)
 
 	w.Header().Set("Content-Type", "application/json")
 	headerStatus := http.StatusCreated
@@ -148,7 +198,7 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 		Result: servShortURL + "/" + shortURL,
 	}
 
-	logger.Log.Info("After POST JSON batch request", zap.String("body", req.URL), zap.String("result", servShortURL+"/"+shortURL), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
+	logger.Log.Info("After POST JSON batch request", zap.String("body", req.URL), zap.String("result", servShortURL+"/"+shortURL), zap.Int("userID", userID), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
 
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(resp); err != nil {
@@ -163,6 +213,21 @@ func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r 
 	if err := dec.Decode(&req); err != nil {
 		logger.Log.Debug("cannot decode request JSON body", zap.Error(err))
 		w.WriteHeader(http.StatusUnprocessableEntity)
+		return
+	}
+
+	cookie, err := r.Cookie(jwtCookieKey)
+	// If any other error occurred, return a bad request error
+	if err != nil {
+		logger.Log.Info("cannot find cookie", zap.Error(err))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	token, userID, err := getTokenAndUserId(cookie)
+	if err != nil || !token.Valid {
+		logger.Log.Info("cannot find cookie", zap.Error(err))
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
@@ -193,10 +258,62 @@ func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r 
 			CorrelationID: request.CorrelationID,
 			ShortURL:      servShortURL + "/" + shortURL,
 		})
-		logger.Log.Info("Readed from batch request", zap.String("body", request.OriginalURL), zap.String("result", servShortURL+"/"+shortURL))
+		logger.Log.Info("Readed from batch request", zap.String("body", request.OriginalURL), zap.String("result", servShortURL+"/"+shortURL), zap.Int("userID", userID))
 	}
 
-	dataStore.storager.StoreURLBatch(r.Context(), savedURLs)
+	dataStore.storager.StoreURLBatch(r.Context(), savedURLs, userID)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+
+	logger.Log.Info("After POST JSON request", zap.Int("count", len(resp)), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
+
+	enc := json.NewEncoder(w)
+	if err := enc.Encode(resp); err != nil {
+		logger.Log.Debug("error encoding response", zap.Error(err))
+		return
+	}
+}
+
+func (dataStore *ServerDataStore) getByUserIDHandler(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(jwtCookieKey)
+	// If any other error occurred, return a bad request error
+	if err != nil {
+		logger.Log.Info("cannot find cookie", zap.Error(err))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	token, userID, err := getTokenAndUserId(cookie)
+	if err != nil || !token.Valid {
+		logger.Log.Info("cannot find cookie", zap.Error(err))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	servShortURL := ""
+	// так как в тестах мы не используем флаги, нужно обезопасить себя
+	if dataStore.configStore.FlagShortRunAddr == "" {
+		servShortURL = "http://localhost:8080"
+	} else {
+		servShortURL = dataStore.configStore.FlagShortRunAddr
+	}
+
+	var resp []models.BatchByUserIDResponse
+	savedURLs, err := dataStore.storager.ReadAllDataForUserID(r.Context(), userID)
+	if err != nil {
+		logger.Log.Info("cannot read data for user", zap.Error(err))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	for _, savedURL := range savedURLs {
+		resp = append(resp, models.BatchByUserIDResponse{
+			ShortURL:    servShortURL + "/" + savedURL.ShortURL,
+			OriginalURL: servShortURL + "/" + savedURL.OriginalURL,
+		})
+		logger.Log.Info("Readed from batch request", zap.String("body", savedURL.OriginalURL), zap.String("result", servShortURL+"/"+savedURL.ShortURL), zap.Int("userID", userID))
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -212,15 +329,31 @@ func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r 
 
 func (dataStore *ServerDataStore) GetHandler(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/")
-	originalURL, ok := dataStore.storager.GetURL(id)
 
-	if !ok {
-		logger.Log.Info("cannot find url by id", zap.String("id", id))
+	cookie, err := r.Cookie(jwtCookieKey)
+	// If any other error occurred, return a bad request error
+	if err != nil {
+		logger.Log.Info("cannot find cookie", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	logger.Log.Info("After GET request", zap.String("id", id), zap.String("originalURL", originalURL))
+	token, userID, err := getTokenAndUserId(cookie)
+	if err != nil || !token.Valid {
+		logger.Log.Info("cannot find cookie", zap.Error(err))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	originalURL, ok := dataStore.storager.GetURL(id, userID)
+
+	if !ok {
+		logger.Log.Info("cannot find url by id", zap.String("id", id), zap.Int("userID", userID))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	logger.Log.Info("After GET request", zap.String("id", id), zap.String("originalURL", originalURL), zap.Int("userID", userID))
 
 	w.Header().Set("Location", originalURL)
 	w.WriteHeader(http.StatusTemporaryRedirect)
@@ -248,4 +381,118 @@ func GenerateShortURL(url string) string {
 	hash := sha256.Sum256([]byte(url))
 	encoded := base64.RawURLEncoding.EncodeToString(hash[:])
 	return encoded[:8]
+}
+
+func (dataStore *ServerDataStore) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logger.Log.Info("CHECK COOKIE")
+		// Get the JWT from the cookie
+		cookie, err := r.Cookie(jwtCookieKey)
+		// If any other error occurred, return a bad request error
+		if err != nil && err != http.ErrNoCookie {
+			logger.Log.Info("error with cookie", zap.Error(err))
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// If the cookie is not found, return an unauthorized error
+		if err == http.ErrNoCookie {
+			logger.Log.Info("Time to create cookie!")
+			lastUserID, err := dataStore.storager.GetLastUserID(r.Context())
+			if err != nil {
+				logger.Log.Info("can't get userID for cookie", zap.Error(err))
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			lastUserIDStr := strconv.Itoa(lastUserID)
+			setUserIDCookie(w, r, lastUserIDStr)
+			logger.Log.Info("Cookie is created!")
+
+			next.ServeHTTP(w, r)
+		} else {
+			// Parse and validate the JWT
+			token, _, err := getTokenAndUserId(cookie)
+
+			if err != nil || !token.Valid {
+				logger.Log.Info("invalid cookie", zap.Error(err))
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			// If the JWT is valid, proceed to the next handler
+			next.ServeHTTP(w, r)
+		}
+	})
+}
+
+func getTokenAndUserId(cookie *http.Cookie) (*jwt.Token, int, error) {
+	claims := &UserClaims{}
+
+	// Parse and validate the JWT
+	token, err := jwt.ParseWithClaims(cookie.Value, claims, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(jwtSecretKey), nil
+	})
+
+	if err != nil || !token.Valid {
+		return token, 0, err
+	}
+
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		return token, 0, err
+	}
+
+	return token, userID, nil
+}
+
+func setUserIDCookie(w http.ResponseWriter, r *http.Request, userID string) {
+	// Create a new token object, specifying signing method and the claims
+	claims := UserClaims{
+		userID,
+		jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			Issuer:    "myServer",
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	// Sign and get the complete encoded token as a string using the secret
+	signedToken, err := token.SignedString([]byte(jwtSecretKey))
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	newCookie := &http.Cookie{
+		Name:    jwtCookieKey,
+		Value:   signedToken,
+		Expires: time.Now().Add(24 * time.Hour),
+	}
+
+	r.AddCookie(newCookie)
+
+	// Set the JWT as a cookie
+	http.SetCookie(w, newCookie)
+}
+
+func GetTestCookie() *http.Cookie {
+	userID := "1"
+	claims := UserClaims{
+		userID,
+		jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			Issuer:    "myServer",
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	// Sign and get the complete encoded token as a string using the secret
+	signedToken, _ := token.SignedString([]byte(jwtSecretKey))
+	return &http.Cookie{
+		Name:    jwtCookieKey,
+		Value:   signedToken,
+		Expires: time.Now().Add(24 * time.Hour),
+	}
 }

@@ -12,6 +12,7 @@ type SavedURL struct {
 	UUID        int    `json:"uuid"`
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
+	UserID      int    `json:"user_id"`
 }
 
 type BatchRequest struct {
@@ -22,4 +23,9 @@ type BatchRequest struct {
 type BatchResponse struct {
 	CorrelationID string `json:"correlation_id"`
 	ShortURL      string `json:"short_url"`
+}
+
+type BatchByUserIDResponse struct {
+	ShortURL    string `json:"short_url"`
+	OriginalURL string `json:"original_url"`
 }
