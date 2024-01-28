@@ -115,7 +115,7 @@ func (dataStore *ServerDataStore) PostHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	token, userID, err := getTokenAndUserId(cookie)
+	token, userID, err := getTokenAndUserID(cookie)
 	if err != nil || !token.Valid {
 		logger.Log.Info("cannot find cookie", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
@@ -168,7 +168,7 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	token, userID, err := getTokenAndUserId(cookie)
+	token, userID, err := getTokenAndUserID(cookie)
 	if err != nil || !token.Valid {
 		logger.Log.Info("cannot find cookie", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
@@ -224,7 +224,7 @@ func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r 
 		return
 	}
 
-	token, userID, err := getTokenAndUserId(cookie)
+	token, userID, err := getTokenAndUserID(cookie)
 	if err != nil || !token.Valid {
 		logger.Log.Info("cannot find cookie", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
@@ -284,7 +284,7 @@ func (dataStore *ServerDataStore) getByUserIDHandler(w http.ResponseWriter, r *h
 		return
 	}
 
-	token, userID, err := getTokenAndUserId(cookie)
+	token, userID, err := getTokenAndUserID(cookie)
 	if err != nil || !token.Valid {
 		logger.Log.Info("cannot find cookie", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
@@ -338,7 +338,7 @@ func (dataStore *ServerDataStore) GetHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	token, userID, err := getTokenAndUserId(cookie)
+	token, userID, err := getTokenAndUserID(cookie)
 	if err != nil || !token.Valid {
 		logger.Log.Info("cannot find cookie", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
@@ -410,7 +410,7 @@ func (dataStore *ServerDataStore) authMiddleware(next http.Handler) http.Handler
 			next.ServeHTTP(w, r)
 		} else {
 			// Parse and validate the JWT
-			token, _, err := getTokenAndUserId(cookie)
+			token, _, err := getTokenAndUserID(cookie)
 
 			if err != nil || !token.Valid {
 				logger.Log.Info("invalid cookie", zap.Error(err))
@@ -424,7 +424,7 @@ func (dataStore *ServerDataStore) authMiddleware(next http.Handler) http.Handler
 	})
 }
 
-func getTokenAndUserId(cookie *http.Cookie) (*jwt.Token, int, error) {
+func getTokenAndUserID(cookie *http.Cookie) (*jwt.Token, int, error) {
 	claims := &UserClaims{}
 
 	// Parse and validate the JWT
