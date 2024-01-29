@@ -385,7 +385,13 @@ func (dataStore *ServerDataStore) authMiddleware(next http.Handler) http.Handler
 		}
 		isBatchByUserID := r.Method == http.MethodGet && r.RequestURI == "/api/user/urls"
 		// If the cookie is not found, make a cookie
-		if err == http.ErrNoCookie && !isBatchByUserID {
+		if err == http.ErrNoCookie {
+			if isBatchByUserID {
+				logger.Log.Info("No cookie and isBatchByUserID", zap.Error(err))
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
 			lastUserID, err := dataStore.storager.GetLastUserID(r.Context())
 			if err != nil {
 				logger.Log.Info("can't get userID for cookie", zap.Error(err))
