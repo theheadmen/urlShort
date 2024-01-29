@@ -310,13 +310,18 @@ func (dataStore *ServerDataStore) getByUserIDHandler(w http.ResponseWriter, r *h
 	for _, savedURL := range savedURLs {
 		resp = append(resp, models.BatchByUserIDResponse{
 			ShortURL:    servShortURL + "/" + savedURL.ShortURL,
-			OriginalURL: servShortURL + "/" + savedURL.OriginalURL,
+			OriginalURL: savedURL.OriginalURL,
 		})
 		logger.Log.Info("Readed from batch request", zap.String("body", savedURL.OriginalURL), zap.String("result", servShortURL+"/"+savedURL.ShortURL), zap.Int("userID", userID))
 	}
 
+	if len(resp) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(http.StatusOK)
 
 	logger.Log.Info("After POST JSON request", zap.Int("count", len(resp)), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
 
