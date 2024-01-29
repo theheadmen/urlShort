@@ -277,6 +277,7 @@ func (storager *Storager) IsItCorrectUserID(userID int) bool {
 
 func (storager *Storager) findUserID(userID int) bool {
 	for usedUserID := range storager.usedUserIDs {
+		logger.Log.Info("we have cookie for", zap.Int("userID", usedUserID))
 		if usedUserID == userID {
 			return true
 		}
