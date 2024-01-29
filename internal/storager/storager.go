@@ -115,10 +115,6 @@ func (storager *Storager) ReadAllDataFromFile() error {
 		logger.Log.Fatal("Failed to read file", zap.Error(err))
 	}
 
-	for usedUserID := range storager.usedUserIDs {
-		logger.Log.Info("we have cookie for", zap.Int("userID", usedUserID))
-	}
-
 	return err
 }
 
@@ -282,8 +278,7 @@ func (storager *Storager) IsItCorrectUserID(userID int) bool {
 }
 
 func (storager *Storager) findUserID(userID int) bool {
-	for usedUserID := range storager.usedUserIDs {
-		logger.Log.Info("we have cookie for", zap.Int("userID", usedUserID))
+	for _, usedUserID := range storager.usedUserIDs {
 		if usedUserID == userID {
 			return true
 		}
