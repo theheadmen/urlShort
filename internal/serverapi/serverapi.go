@@ -329,31 +329,15 @@ func (dataStore *ServerDataStore) getByUserIDHandler(w http.ResponseWriter, r *h
 
 func (dataStore *ServerDataStore) GetHandler(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/")
-
-	cookie, err := r.Cookie(jwtCookieKey)
-	// If any other error occurred, return a bad request error
-	if err != nil {
-		logger.Log.Info("cannot find cookie", zap.Error(err))
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	token, userID, err := getTokenAndUserID(cookie)
-	if err != nil || !token.Valid {
-		logger.Log.Info("cannot find cookie", zap.Error(err))
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	originalURL, ok := dataStore.storager.GetURL(id, userID)
+	originalURL, ok := dataStore.storager.GetURLForAnyUserID(id)
 
 	if !ok {
-		logger.Log.Info("cannot find url by id", zap.String("id", id), zap.Int("userID", userID))
+		logger.Log.Info("cannot find url by id", zap.String("id", id))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	logger.Log.Info("After GET request", zap.String("id", id), zap.String("originalURL", originalURL), zap.Int("userID", userID))
+	logger.Log.Info("After GET request", zap.String("id", id), zap.String("originalURL", originalURL))
 
 	w.Header().Set("Location", originalURL)
 	w.WriteHeader(http.StatusTemporaryRedirect)
@@ -385,7 +369,6 @@ func GenerateShortURL(url string) string {
 
 func (dataStore *ServerDataStore) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger.Log.Info("CHECK COOKIE")
 		// Get the JWT from the cookie
 		cookie, err := r.Cookie(jwtCookieKey)
 		// If any other error occurred, return a bad request error
@@ -396,7 +379,6 @@ func (dataStore *ServerDataStore) authMiddleware(next http.Handler) http.Handler
 		}
 		// If the cookie is not found, return an unauthorized error
 		if err == http.ErrNoCookie {
-			logger.Log.Info("Time to create cookie!")
 			lastUserID, err := dataStore.storager.GetLastUserID(r.Context())
 			if err != nil {
 				logger.Log.Info("can't get userID for cookie", zap.Error(err))

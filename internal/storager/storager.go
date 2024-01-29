@@ -245,6 +245,23 @@ func (storager *Storager) GetURL(shortURL string, userID int) (string, bool) {
 	return originalURL, ok
 }
 
+func (storager *Storager) GetURLForAnyUserID(shortURL string) (string, bool) {
+	storager.mu.RLock()
+	originalURL, ok := storager.findEntityByShortURL(shortURL)
+	storager.mu.RUnlock()
+
+	return originalURL, ok
+}
+
+func (storager *Storager) findEntityByShortURL(shortURL string) (string, bool) {
+	for key, value := range storager.URLMap {
+		if key.shortURL == shortURL {
+			return value, true
+		}
+	}
+	return "", false
+}
+
 func (storager *Storager) GetLastUserID(ctx context.Context) (int, error) {
 	if storager.DB != nil {
 		lastUserID, err := storager.DB.IncrementID(ctx)
