@@ -316,6 +316,7 @@ func (dataStore *ServerDataStore) getByUserIDHandler(w http.ResponseWriter, r *h
 	}
 
 	if len(resp) == 0 {
+		logger.Log.Info("We find no urls for user", zap.Int("userID", userID))
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -392,18 +393,20 @@ func (dataStore *ServerDataStore) authMiddleware(next http.Handler) http.Handler
 			}
 			lastUserIDStr := strconv.Itoa(lastUserID)
 			setUserIDCookie(w, r, lastUserIDStr)
-			logger.Log.Info("Cookie is created!")
+			dataStore.storager.SaveUserID(lastUserID)
+			logger.Log.Info("Cookie is created! New user id", zap.Int("userID", lastUserID))
 
 			next.ServeHTTP(w, r)
 		} else {
 			// Parse and validate the JWT
-			token, _, err := getTokenAndUserID(cookie)
+			token, userID, err := getTokenAndUserID(cookie)
 
-			if err != nil || !token.Valid {
-				logger.Log.Info("invalid cookie", zap.Error(err))
+			if err != nil || !token.Valid || !dataStore.storager.IsItCorrectUserID(userID) {
+				logger.Log.Info("invalid cookie", zap.Error(err), zap.Int("userID", userID))
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
+			logger.Log.Info("Cookie is finded", zap.Int("userID", userID))
 
 			// If the JWT is valid, proceed to the next handler
 			next.ServeHTTP(w, r)

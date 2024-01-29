@@ -19,22 +19,24 @@ type URLMapKey struct {
 }
 
 type Storager struct {
-	filePath   string
-	isWithFile bool
-	URLMap     map[URLMapKey]string
-	mu         sync.RWMutex
-	DB         *dbconnector.DBConnector
-	lastUserID int
+	filePath    string
+	isWithFile  bool
+	URLMap      map[URLMapKey]string
+	mu          sync.RWMutex
+	DB          *dbconnector.DBConnector
+	lastUserID  int
+	usedUserIDs []int
 }
 
 func NewStorager(filePath string, isWithFile bool, URLMap map[URLMapKey]string, dbConnector *dbconnector.DBConnector, ctx context.Context) *Storager {
 	storager := &Storager{
-		filePath:   filePath,
-		isWithFile: isWithFile,
-		URLMap:     URLMap,
-		mu:         sync.RWMutex{},
-		DB:         dbConnector,
-		lastUserID: 0,
+		filePath:    filePath,
+		isWithFile:  isWithFile,
+		URLMap:      URLMap,
+		mu:          sync.RWMutex{},
+		DB:          dbConnector,
+		lastUserID:  0,
+		usedUserIDs: []int{},
 	}
 	err := storager.readAllData(ctx)
 	if err != nil {
@@ -45,12 +47,13 @@ func NewStorager(filePath string, isWithFile bool, URLMap map[URLMapKey]string, 
 
 func NewStoragerWithoutReadingData(filePath string, isWithFile bool, URLMap map[URLMapKey]string, dbConnector *dbconnector.DBConnector) *Storager {
 	return &Storager{
-		filePath:   filePath,
-		isWithFile: isWithFile,
-		URLMap:     URLMap,
-		mu:         sync.RWMutex{},
-		DB:         dbConnector,
-		lastUserID: 0,
+		filePath:    filePath,
+		isWithFile:  isWithFile,
+		URLMap:      URLMap,
+		mu:          sync.RWMutex{},
+		DB:          dbConnector,
+		lastUserID:  1,
+		usedUserIDs: []int{1},
 	}
 }
 
@@ -64,6 +67,7 @@ func (storager *Storager) readAllData(ctx context.Context) error {
 
 		for _, url := range urls {
 			storager.URLMap[URLMapKey{url.ShortURL, url.UserID}] = url.OriginalURL
+			storager.usedUserIDs = append(storager.usedUserIDs, url.UserID)
 			logger.Log.Info("Read new data from database", zap.Int("UUID", url.UUID), zap.String("OriginalURL", url.OriginalURL), zap.String("ShortURL", url.ShortURL), zap.Int("UserID", url.UserID))
 		}
 
@@ -97,6 +101,7 @@ func (storager *Storager) ReadAllDataFromFile() error {
 			logger.Log.Debug("Failed unmarshal data", zap.Error(err))
 		}
 		storager.URLMap[URLMapKey{result.ShortURL, result.UserID}] = result.OriginalURL
+		storager.usedUserIDs = append(storager.usedUserIDs, result.UserID)
 		if result.UserID > curMax {
 			curMax = result.UserID
 		}
@@ -262,6 +267,23 @@ func (storager *Storager) findEntityByShortURL(shortURL string) (string, bool) {
 	return "", false
 }
 
+func (storager *Storager) IsItCorrectUserID(userID int) bool {
+	storager.mu.RLock()
+	ok := storager.findUserID(userID)
+	storager.mu.RUnlock()
+
+	return ok
+}
+
+func (storager *Storager) findUserID(userID int) bool {
+	for usedUserID := range storager.usedUserIDs {
+		if usedUserID == userID {
+			return true
+		}
+	}
+	return false
+}
+
 func (storager *Storager) GetLastUserID(ctx context.Context) (int, error) {
 	if storager.DB != nil {
 		lastUserID, err := storager.DB.IncrementID(ctx)
@@ -275,4 +297,10 @@ func (storager *Storager) GetLastUserID(ctx context.Context) (int, error) {
 
 	storager.lastUserID = storager.lastUserID + 1
 	return storager.lastUserID, nil
+}
+
+func (storager *Storager) SaveUserID(userID int) {
+	storager.mu.Lock()
+	storager.usedUserIDs = append(storager.usedUserIDs, userID)
+	storager.mu.Unlock()
 }

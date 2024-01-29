@@ -70,7 +70,7 @@ func TestSimpleHandler(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.method, func(t *testing.T) {
 			testValue := strings.NewReader(tc.testValue)
-			resp, get := testRequest(t, ts, tc.method, "/"+tc.testURL, testValue, serverapi.GetTestCookie())
+			resp, get := testRequest(t, ts, tc.method, "/"+tc.testURL, testValue, nil)
 			defer resp.Body.Close()
 
 			assert.Equal(t, tc.expectedCode, resp.StatusCode, "Код ответа не совпадает с ожидаемым")
@@ -143,7 +143,7 @@ func TestJsonPost(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.method, func(t *testing.T) {
 			testValue := strings.NewReader(tc.body)
-			resp, get := testRequest(t, ts, tc.method, "/api/shorten", testValue, serverapi.GetTestCookie())
+			resp, get := testRequest(t, ts, tc.method, "/api/shorten", testValue, nil)
 			get = strings.TrimSuffix(string(get), "\n")
 			defer resp.Body.Close()
 
@@ -211,7 +211,7 @@ func TestJsonBatchPost(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.method, func(t *testing.T) {
 			testValue := strings.NewReader(tc.body)
-			resp, get := testRequest(t, ts, tc.method, "/api/shorten/batch", testValue, serverapi.GetTestCookie())
+			resp, get := testRequest(t, ts, tc.method, "/api/shorten/batch", testValue, nil)
 			get = strings.TrimSuffix(string(get), "\n")
 			defer resp.Body.Close()
 
