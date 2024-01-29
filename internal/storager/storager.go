@@ -29,6 +29,8 @@ type Storager struct {
 }
 
 func NewStorager(filePath string, isWithFile bool, URLMap map[URLMapKey]string, dbConnector *dbconnector.DBConnector, ctx context.Context) *Storager {
+	var empty []int
+
 	storager := &Storager{
 		filePath:    filePath,
 		isWithFile:  isWithFile,
@@ -36,7 +38,7 @@ func NewStorager(filePath string, isWithFile bool, URLMap map[URLMapKey]string, 
 		mu:          sync.RWMutex{},
 		DB:          dbConnector,
 		lastUserID:  0,
-		usedUserIDs: []int{},
+		usedUserIDs: empty,
 	}
 	err := storager.readAllData(ctx)
 	if err != nil {
@@ -111,6 +113,10 @@ func (storager *Storager) ReadAllDataFromFile() error {
 
 	if err := scanner.Err(); err != nil {
 		logger.Log.Fatal("Failed to read file", zap.Error(err))
+	}
+
+	for usedUserID := range storager.usedUserIDs {
+		logger.Log.Info("we have cookie for", zap.Int("userID", usedUserID))
 	}
 
 	return err
