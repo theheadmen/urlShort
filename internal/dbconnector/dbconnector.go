@@ -9,7 +9,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/lib/pq"
-	_ "github.com/lib/pq"
 )
 
 type DBConnector struct {

@@ -518,7 +518,7 @@ func (dataStore *ServerDataStore) deleteByUserIDHandler(w http.ResponseWriter, r
 		return
 	}
 
-	var reqBody models.DeleteURLRequest
+	var slice []string
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -528,7 +528,7 @@ func (dataStore *ServerDataStore) deleteByUserIDHandler(w http.ResponseWriter, r
 	}
 	defer r.Body.Close()
 
-	err = json.Unmarshal(body, &reqBody)
+	err = json.Unmarshal(body, &slice)
 	if err != nil {
 		logger.Log.Info("cannot decode request JSON body", zap.Error(err), zap.String("body", string(body)))
 		w.WriteHeader(http.StatusUnprocessableEntity)
@@ -536,11 +536,11 @@ func (dataStore *ServerDataStore) deleteByUserIDHandler(w http.ResponseWriter, r
 	}
 
 	// Print the URLs to the console
-	for _, URL := range reqBody.URLs {
+	for _, URL := range slice {
 		logger.Log.Info("Try to delete", zap.String("ShortURL", URL), zap.Int("userID", userID))
 	}
 
-	err = dataStore.storager.DeleteByUserID(r.Context(), reqBody.URLs, userID)
+	err = dataStore.storager.DeleteByUserID(r.Context(), slice, userID)
 	if err != nil {
 		logger.Log.Info("Can't delete by user id", zap.String("error", err.Error()))
 		w.WriteHeader(http.StatusInternalServerError)
