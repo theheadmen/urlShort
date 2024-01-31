@@ -14,8 +14,6 @@ import (
 	config "github.com/theheadmen/urlShort/internal/serverconfig"
 	"github.com/theheadmen/urlShort/internal/storager"
 	"go.uber.org/zap"
-
-	_ "github.com/lib/pq"
 )
 
 // for test

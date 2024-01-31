@@ -520,9 +520,17 @@ func (dataStore *ServerDataStore) deleteByUserIDHandler(w http.ResponseWriter, r
 
 	var reqBody models.DeleteURLRequest
 
-	dec := json.NewDecoder(r.Body)
-	if err := dec.Decode(&reqBody); err != nil {
-		logger.Log.Debug("cannot decode request JSON body", zap.Error(err))
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		logger.Log.Info("Error reading request body", zap.Error(err))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	defer r.Body.Close()
+
+	err = json.Unmarshal(body, &reqBody)
+	if err != nil {
+		logger.Log.Info("cannot decode request JSON body", zap.Error(err), zap.String("body", string(body)))
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		return
 	}
