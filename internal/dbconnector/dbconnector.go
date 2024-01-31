@@ -8,6 +8,7 @@ import (
 	"github.com/theheadmen/urlShort/internal/models"
 	"go.uber.org/zap"
 
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 )
 
@@ -37,6 +38,7 @@ func NewDBConnector(ctx context.Context, psqlInfo string) (*DBConnector, error) 
 		shortURL VARCHAR(255),
 		originalURL VARCHAR(255),
 		userID INT,
+		deleted BOOLEAN DEFAULT FALSE,
 		UNIQUE(originalURL, userID)
 	);
 	CREATE TABLE IF NOT EXISTS last_user_id (
@@ -95,7 +97,7 @@ func (dbConnector *DBConnector) SelectAllSavedURLs(ctx context.Context) ([]model
 	var savedURLs []models.SavedURL
 	var emptyURLs []models.SavedURL
 
-	sqlStatement := `SELECT id, shortURL, originalURL, userID FROM urls`
+	sqlStatement := `SELECT id, shortURL, originalURL, userID, deleted FROM urls`
 	rows, err := dbConnector.DB.QueryContext(ctx, sqlStatement)
 	if err != nil {
 		logger.Log.Info("Failed to read from database", zap.Error(err))
@@ -105,7 +107,7 @@ func (dbConnector *DBConnector) SelectAllSavedURLs(ctx context.Context) ([]model
 
 	for rows.Next() {
 		var savedURL models.SavedURL
-		err = rows.Scan(&savedURL.UUID, &savedURL.ShortURL, &savedURL.OriginalURL, &savedURL.UserID)
+		err = rows.Scan(&savedURL.UUID, &savedURL.ShortURL, &savedURL.OriginalURL, &savedURL.UserID, &savedURL.Deleted)
 		if err != nil {
 			logger.Log.Info("Failed to read from database", zap.Error(err))
 			return emptyURLs, err
@@ -126,7 +128,7 @@ func (dbConnector *DBConnector) SelectSavedURLsForUserID(ctx context.Context, us
 	var savedURLs []models.SavedURL
 	var emptyURLs []models.SavedURL
 
-	sqlStatement := `SELECT id, shortURL, originalURL, userID FROM urls where userID = $1`
+	sqlStatement := `SELECT id, shortURL, originalURL, userID, deleted FROM urls where userID = $1`
 	rows, err := dbConnector.DB.QueryContext(ctx, sqlStatement, userID)
 	if err != nil {
 		logger.Log.Info("Failed to read from database", zap.Error(err))
@@ -136,7 +138,7 @@ func (dbConnector *DBConnector) SelectSavedURLsForUserID(ctx context.Context, us
 
 	for rows.Next() {
 		var savedURL models.SavedURL
-		err = rows.Scan(&savedURL.UUID, &savedURL.ShortURL, &savedURL.OriginalURL, &savedURL.UserID)
+		err = rows.Scan(&savedURL.UUID, &savedURL.ShortURL, &savedURL.OriginalURL, &savedURL.UserID, &savedURL.Deleted)
 		if err != nil {
 			logger.Log.Info("Failed to read from database", zap.Error(err))
 			return emptyURLs, err
@@ -189,4 +191,36 @@ func (dbConnector *DBConnector) IncrementID(ctx context.Context) (int, error) {
 	}
 
 	return newID, nil
+}
+
+func (dbConnector *DBConnector) UpdateDeletedSavedURLBatch(ctx context.Context, shortURLs []string, userID int) error {
+	stmt, err := dbConnector.DB.PrepareContext(ctx, `
+		UPDATE urls
+		SET deleted = TRUE
+		WHERE shortURL = ANY($1)
+		AND userID = $2;
+	`)
+	if err != nil {
+		logger.Log.Info("Failed to prepare the statement: ", zap.Error(err))
+		return err
+	}
+	defer stmt.Close()
+
+	// Execute the statement
+	res, err := stmt.ExecContext(ctx, pq.Array(shortURLs), userID)
+	if err != nil {
+		logger.Log.Info("Failed to execute the statement: ", zap.Error(err))
+		return err
+	}
+
+	// Check how many rows were affected
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		logger.Log.Info("Failed to get the number of rows affected: ", zap.Error(err))
+		return err
+	}
+
+	logger.Log.Info("Inserted new data to database", zap.Int64("count", rowsAffected))
+
+	return nil
 }

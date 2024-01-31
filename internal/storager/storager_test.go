@@ -14,7 +14,7 @@ func TestStoragerReadAllWriteFile(t *testing.T) {
 	storager := Storager{
 		filePath:   fname,
 		isWithFile: false,
-		URLMap:     make(map[URLMapKey]string),
+		URLMap:     make(map[URLMapKey]models.SavedURL),
 		mu:         sync.RWMutex{},
 		DB:         nil,
 		lastUserID: userID,
@@ -24,6 +24,7 @@ func TestStoragerReadAllWriteFile(t *testing.T) {
 		ShortURL:    `ShortURL`,
 		OriginalURL: `OriginalURL`,
 		UserID:      userID,
+		Deleted:     false,
 	}
 	if err := storager.Save(savedURL); err != nil {
 		t.Error(err)

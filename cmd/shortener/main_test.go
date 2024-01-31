@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/theheadmen/urlShort/internal/models"
 	"github.com/theheadmen/urlShort/internal/serverapi"
 	config "github.com/theheadmen/urlShort/internal/serverconfig"
 	"github.com/theheadmen/urlShort/internal/storager"
@@ -47,7 +48,7 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyVal
 
 func TestSimpleHandler(t *testing.T) {
 	configStore := config.NewConfigStore()
-	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[storager.URLMapKey]string), nil /*dbconnector*/)
+	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[storager.URLMapKey]models.SavedURL), nil /*dbconnector*/)
 	ts := httptest.NewServer(serverapi.MakeChiServ(configStore, storager))
 	defer ts.Close()
 
@@ -83,7 +84,7 @@ func TestSimpleHandler(t *testing.T) {
 
 func TestJsonPost(t *testing.T) {
 	configStore := config.NewConfigStore()
-	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[storager.URLMapKey]string), nil /*dbconnector*/)
+	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[storager.URLMapKey]models.SavedURL), nil /*dbconnector*/)
 	ts := httptest.NewServer(serverapi.MakeChiServ(configStore, storager))
 	defer ts.Close()
 
@@ -157,7 +158,7 @@ func TestJsonPost(t *testing.T) {
 
 func TestJsonBatchPost(t *testing.T) {
 	configStore := config.NewConfigStore()
-	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[storager.URLMapKey]string), nil /*dbconnector*/)
+	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[storager.URLMapKey]models.SavedURL), nil /*dbconnector*/)
 	ts := httptest.NewServer(serverapi.MakeChiServ(configStore, storager))
 	defer ts.Close()
 
@@ -239,7 +240,7 @@ func TestSequenceHandler(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.testURL, func(t *testing.T) {
-			storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[storager.URLMapKey]string), nil /*dbconnector*/)
+			storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[storager.URLMapKey]models.SavedURL), nil /*dbconnector*/)
 			dataStore := serverapi.NewServerDataStore(configStore, storager)
 			// тестим последовательно пост + гет запросы
 			body := strings.NewReader(tc.testURL)
@@ -319,7 +320,7 @@ func TestGenerateShortURL(t *testing.T) {
 
 func TestCompressResponse(t *testing.T) {
 	configStore := config.NewConfigStore()
-	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[storager.URLMapKey]string), nil /*dbconnector*/)
+	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[storager.URLMapKey]models.SavedURL), nil /*dbconnector*/)
 	dataStore := serverapi.NewServerDataStore(configStore, storager)
 	r := chi.NewRouter()
 

@@ -21,14 +21,14 @@ type URLMapKey struct {
 type Storager struct {
 	filePath    string
 	isWithFile  bool
-	URLMap      map[URLMapKey]string
+	URLMap      map[URLMapKey]models.SavedURL
 	mu          sync.RWMutex
 	DB          *dbconnector.DBConnector
 	lastUserID  int
 	usedUserIDs []int
 }
 
-func NewStorager(filePath string, isWithFile bool, URLMap map[URLMapKey]string, dbConnector *dbconnector.DBConnector, ctx context.Context) *Storager {
+func NewStorager(filePath string, isWithFile bool, URLMap map[URLMapKey]models.SavedURL, dbConnector *dbconnector.DBConnector, ctx context.Context) *Storager {
 	var empty []int
 
 	storager := &Storager{
@@ -47,7 +47,7 @@ func NewStorager(filePath string, isWithFile bool, URLMap map[URLMapKey]string, 
 	return storager
 }
 
-func NewStoragerWithoutReadingData(filePath string, isWithFile bool, URLMap map[URLMapKey]string, dbConnector *dbconnector.DBConnector) *Storager {
+func NewStoragerWithoutReadingData(filePath string, isWithFile bool, URLMap map[URLMapKey]models.SavedURL, dbConnector *dbconnector.DBConnector) *Storager {
 	return &Storager{
 		filePath:    filePath,
 		isWithFile:  isWithFile,
@@ -68,9 +68,9 @@ func (storager *Storager) readAllData(ctx context.Context) error {
 		}
 
 		for _, url := range urls {
-			storager.URLMap[URLMapKey{url.ShortURL, url.UserID}] = url.OriginalURL
+			storager.URLMap[URLMapKey{url.ShortURL, url.UserID}] = url
 			storager.usedUserIDs = append(storager.usedUserIDs, url.UserID)
-			logger.Log.Info("Read new data from database", zap.Int("UUID", url.UUID), zap.String("OriginalURL", url.OriginalURL), zap.String("ShortURL", url.ShortURL), zap.Int("UserID", url.UserID))
+			logger.Log.Info("Read new data from database", zap.Int("UUID", url.UUID), zap.String("OriginalURL", url.OriginalURL), zap.String("ShortURL", url.ShortURL), zap.Int("UserID", url.UserID), zap.Bool("Deleted", url.Deleted))
 		}
 
 		return err
@@ -102,12 +102,12 @@ func (storager *Storager) ReadAllDataFromFile() error {
 		if err != nil {
 			logger.Log.Debug("Failed unmarshal data", zap.Error(err))
 		}
-		storager.URLMap[URLMapKey{result.ShortURL, result.UserID}] = result.OriginalURL
+		storager.URLMap[URLMapKey{result.ShortURL, result.UserID}] = result
 		storager.usedUserIDs = append(storager.usedUserIDs, result.UserID)
 		if result.UserID > curMax {
 			curMax = result.UserID
 		}
-		logger.Log.Info("Read new data from file", zap.Int("UUID", result.UUID), zap.String("OriginalURL", result.OriginalURL), zap.String("ShortURL", result.ShortURL), zap.Int("UserID", result.UserID))
+		logger.Log.Info("Read new data from file", zap.Int("UUID", result.UUID), zap.String("OriginalURL", result.OriginalURL), zap.String("ShortURL", result.ShortURL), zap.Int("UserID", result.UserID), zap.Bool("Deleted", result.Deleted))
 	}
 	storager.lastUserID = curMax
 
@@ -157,7 +157,7 @@ func (storager *Storager) ReadAllDataFromFileForUserID(userID int) ([]models.Sav
 		}
 		if result.UserID == userID {
 			filteredData = append(filteredData, result)
-			logger.Log.Info("Read new data from file", zap.Int("UUID", result.UUID), zap.String("OriginalURL", result.OriginalURL), zap.String("ShortURL", result.ShortURL), zap.Int("UserID", result.UserID))
+			logger.Log.Info("Read new data from file", zap.Int("UUID", result.UUID), zap.String("OriginalURL", result.OriginalURL), zap.String("ShortURL", result.ShortURL), zap.Int("UserID", result.UserID), zap.Bool("Deleted", result.Deleted))
 		}
 	}
 
@@ -173,20 +173,21 @@ func (storager *Storager) StoreURL(ctx context.Context, shortURL string, origina
 	_, ok := storager.GetURL(shortURL, userID)
 
 	if ok {
-		logger.Log.Info("We already have data for this url", zap.String("OriginalURL", originalURL), zap.String("ShortURL", shortURL))
+		logger.Log.Info("We already have data for this url", zap.String("OriginalURL", originalURL), zap.String("ShortURL", shortURL), zap.Bool("Deleted", false))
 		return true
 	}
-
-	storager.mu.Lock()
-	storager.URLMap[URLMapKey{shortURL, userID}] = originalURL
-	storager.mu.Unlock()
 
 	savedURL := models.SavedURL{
 		UUID:        len(storager.URLMap),
 		ShortURL:    shortURL,
 		OriginalURL: originalURL,
 		UserID:      userID,
+		Deleted:     false,
 	}
+
+	storager.mu.Lock()
+	storager.URLMap[URLMapKey{shortURL, userID}] = savedURL
+	storager.mu.Unlock()
 
 	if storager.DB != nil {
 		storager.DB.InsertSavedURLBatch(ctx, []models.SavedURL{savedURL}, userID)
@@ -202,10 +203,10 @@ func (storager *Storager) StoreURLBatch(ctx context.Context, forStore []models.S
 		_, ok := storager.GetURL(savedURL.ShortURL, userID)
 
 		if ok {
-			logger.Log.Info("We already have data for this url", zap.String("OriginalURL", savedURL.OriginalURL), zap.String("ShortURL", savedURL.ShortURL), zap.Int("UserID", userID))
+			logger.Log.Info("We already have data for this url", zap.String("OriginalURL", savedURL.OriginalURL), zap.String("ShortURL", savedURL.ShortURL), zap.Int("UserID", userID), zap.Bool("Deleted", savedURL.Deleted))
 		} else {
 			storager.mu.Lock()
-			storager.URLMap[URLMapKey{savedURL.ShortURL, userID}] = savedURL.OriginalURL
+			storager.URLMap[URLMapKey{savedURL.ShortURL, userID}] = savedURL
 			storager.mu.Unlock()
 			filteredStore = append(filteredStore, savedURL)
 		}
@@ -246,27 +247,27 @@ func (storager *Storager) Save(savedURL models.SavedURL) error {
 
 func (storager *Storager) GetURL(shortURL string, userID int) (string, bool) {
 	storager.mu.RLock()
-	originalURL, ok := storager.URLMap[URLMapKey{shortURL, userID}]
+	originalSavedURL, ok := storager.URLMap[URLMapKey{shortURL, userID}]
 	storager.mu.RUnlock()
 
-	return originalURL, ok
+	return originalSavedURL.OriginalURL, ok
 }
 
-func (storager *Storager) GetURLForAnyUserID(shortURL string) (string, bool) {
+func (storager *Storager) GetURLForAnyUserID(shortURL string) (models.SavedURL, bool) {
 	storager.mu.RLock()
-	originalURL, ok := storager.findEntityByShortURL(shortURL)
+	originalSavedURL, ok := storager.findEntityByShortURL(shortURL)
 	storager.mu.RUnlock()
 
-	return originalURL, ok
+	return originalSavedURL, ok
 }
 
-func (storager *Storager) findEntityByShortURL(shortURL string) (string, bool) {
+func (storager *Storager) findEntityByShortURL(shortURL string) (models.SavedURL, bool) {
 	for key, value := range storager.URLMap {
 		if key.shortURL == shortURL {
 			return value, true
 		}
 	}
-	return "", false
+	return models.SavedURL{}, false
 }
 
 func (storager *Storager) IsItCorrectUserID(userID int) bool {
@@ -305,4 +306,40 @@ func (storager *Storager) SaveUserID(userID int) {
 	storager.mu.Lock()
 	storager.usedUserIDs = append(storager.usedUserIDs, userID)
 	storager.mu.Unlock()
+}
+
+func (storager *Storager) DeleteByUserID(ctx context.Context, shortURLs []string, userID int) error {
+	storager.mu.Lock()
+	for _, shortURL := range shortURLs {
+		originalSavedURL, ok := storager.findEntityByShortURL(shortURL)
+		if ok {
+			originalSavedURL.Deleted = true
+			storager.URLMap[URLMapKey{shortURL, userID}] = originalSavedURL
+		}
+	}
+	storager.mu.Unlock()
+
+	if storager.DB != nil {
+		err := storager.DB.UpdateDeletedSavedURLBatch(ctx, shortURLs, userID)
+		return err
+	} else if storager.isWithFile {
+		// а что с файлом делать? Просто дописать?
+		logger.Log.Info("Update file")
+		filteredStore := []models.SavedURL{}
+
+		storager.mu.RLock()
+		for _, shortURL := range shortURLs {
+			originalSavedURL, ok := storager.URLMap[URLMapKey{shortURL, userID}]
+			if ok {
+				filteredStore = append(filteredStore, originalSavedURL)
+			}
+		}
+		storager.mu.RUnlock()
+
+		for _, savedURL := range filteredStore {
+			storager.Save(savedURL)
+		}
+		return nil
+	}
+	return nil
 }

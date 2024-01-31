@@ -13,6 +13,7 @@ type SavedURL struct {
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
 	UserID      int    `json:"user_id"`
+	Deleted     bool   `json:"deleted"`
 }
 
 type BatchRequest struct {
@@ -28,4 +29,8 @@ type BatchResponse struct {
 type BatchByUserIDResponse struct {
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
+}
+
+type DeleteURLRequest struct {
+	URLs []string `json:"urls"`
 }

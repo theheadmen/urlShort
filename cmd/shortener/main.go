@@ -9,6 +9,7 @@ import (
 
 	"github.com/theheadmen/urlShort/internal/dbconnector"
 	"github.com/theheadmen/urlShort/internal/logger"
+	"github.com/theheadmen/urlShort/internal/models"
 	"github.com/theheadmen/urlShort/internal/serverapi"
 	config "github.com/theheadmen/urlShort/internal/serverconfig"
 	"github.com/theheadmen/urlShort/internal/storager"
@@ -35,7 +36,7 @@ func main() {
 	if err != nil {
 		logger.Log.Debug("Can't open stable connection with DB", zap.String("error", err.Error()))
 	}
-	storager := storager.NewStorager(configStore.FlagFile, true /*isWithFile*/, make(map[storager.URLMapKey]string), dbConnector, ctx)
+	storager := storager.NewStorager(configStore.FlagFile, true /*isWithFile*/, make(map[storager.URLMapKey]models.SavedURL), dbConnector, ctx)
 
 	// Create a new chi router
 	router := serverapi.MakeChiServ(configStore, storager)

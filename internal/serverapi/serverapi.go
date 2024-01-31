@@ -76,6 +76,7 @@ func MakeChiServ(configStore *config.ConfigStore, storager *storager.Storager) c
 	router.Get("/ping", dataStore.pingHandler)
 	router.Post("/api/shorten/batch", dataStore.postBatchJSONHandler)
 	router.Get("/api/user/urls", dataStore.getByUserIDHandler)
+	router.Delete("/api/user/urls", dataStore.deleteByUserIDHandler)
 	return router
 }
 
@@ -253,6 +254,7 @@ func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r 
 			UUID:        0, /*не имеет смысла, вставится автоматически потом*/
 			OriginalURL: request.OriginalURL,
 			ShortURL:    shortURL,
+			Deleted:     false,
 		})
 		resp = append(resp, models.BatchResponse{
 			CorrelationID: request.CorrelationID,
@@ -312,7 +314,7 @@ func (dataStore *ServerDataStore) getByUserIDHandler(w http.ResponseWriter, r *h
 			ShortURL:    servShortURL + "/" + savedURL.ShortURL,
 			OriginalURL: savedURL.OriginalURL,
 		})
-		logger.Log.Info("Readed from batch request", zap.String("body", savedURL.OriginalURL), zap.String("result", servShortURL+"/"+savedURL.ShortURL), zap.Int("userID", userID))
+		logger.Log.Info("Readed from batch request", zap.String("body", savedURL.OriginalURL), zap.String("result", servShortURL+"/"+savedURL.ShortURL), zap.Int("userID", userID), zap.Bool("Deleted", savedURL.Deleted))
 	}
 
 	if len(resp) == 0 {
@@ -335,7 +337,7 @@ func (dataStore *ServerDataStore) getByUserIDHandler(w http.ResponseWriter, r *h
 
 func (dataStore *ServerDataStore) GetHandler(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/")
-	originalURL, ok := dataStore.storager.GetURLForAnyUserID(id)
+	originalSavedURL, ok := dataStore.storager.GetURLForAnyUserID(id)
 
 	if !ok {
 		logger.Log.Info("cannot find url by id", zap.String("id", id))
@@ -343,9 +345,15 @@ func (dataStore *ServerDataStore) GetHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	logger.Log.Info("After GET request", zap.String("id", id), zap.String("originalURL", originalURL))
+	if originalSavedURL.Deleted {
+		logger.Log.Info("this url is deleted", zap.String("id", id))
+		w.WriteHeader(http.StatusGone)
+		return
+	}
 
-	w.Header().Set("Location", originalURL)
+	logger.Log.Info("After GET request", zap.String("id", id), zap.String("originalURL", originalSavedURL.OriginalURL))
+
+	w.Header().Set("Location", originalSavedURL.OriginalURL)
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
 
@@ -492,4 +500,44 @@ func GetTestCookie() *http.Cookie {
 		Value:   signedToken,
 		Expires: time.Now().Add(24 * time.Hour),
 	}
+}
+
+func (dataStore *ServerDataStore) deleteByUserIDHandler(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(jwtCookieKey)
+	// If any other error occurred, return a bad request error
+	if err != nil {
+		logger.Log.Info("cannot find cookie", zap.Error(err))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	token, userID, err := getTokenAndUserID(cookie)
+	if err != nil || !token.Valid {
+		logger.Log.Info("cannot find cookie", zap.Error(err))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	var reqBody models.DeleteURLRequest
+
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&reqBody); err != nil {
+		logger.Log.Debug("cannot decode request JSON body", zap.Error(err))
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		return
+	}
+
+	// Print the URLs to the console
+	for _, URL := range reqBody.URLs {
+		logger.Log.Info("Try to delete", zap.String("ShortURL", URL), zap.Int("userID", userID))
+	}
+
+	err = dataStore.storager.DeleteByUserID(r.Context(), reqBody.URLs, userID)
+	if err != nil {
+		logger.Log.Info("Can't delete by user id", zap.String("error", err.Error()))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
 }
