@@ -16,13 +16,13 @@ import (
 	"go.uber.org/zap"
 )
 
-// for test
+// для локального теста с бд
 // go run . -a ":8081" -b "http://localhost:8081" -d "host=localhost port=5432 user=postgres password=example dbname=godb sslmode=disable"
 func main() {
 	configStore := config.NewConfigStore()
 	configStore.ParseFlags()
 
-	// Create a context that can be cancelled
+	// создадим контекст который можно отменить
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -36,22 +36,19 @@ func main() {
 	}
 	storager := storager.NewStorager(configStore.FlagFile, true /*isWithFile*/, make(map[storager.URLMapKey]models.SavedURL), dbConnector, ctx)
 
-	// Create a new chi router
 	router := serverapi.MakeChiServ(configStore, storager)
 
-	// Create a new server
 	server := &http.Server{
 		Addr:    configStore.FlagRunAddr,
 		Handler: router,
 	}
 
-	// Start the server in a goroutine
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Log.Fatal("Server is down", zap.String("error", err.Error()))
 		}
 	}()
 
-	// Block until we receive a signal or the context is cancelled
+	// блокируем пока контекст не завершится, тем или иным путем
 	<-ctx.Done()
 }

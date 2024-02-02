@@ -95,7 +95,7 @@ func (storager *Storager) ReadAllDataFromFile() error {
 
 	scanner := bufio.NewScanner(file)
 	curMax := storager.lastUserID
-	// здесь нужно искать максимальное значение userID
+
 	for scanner.Scan() {
 		var result models.SavedURL
 		err := json.Unmarshal([]byte(scanner.Text()), &result)
@@ -104,6 +104,7 @@ func (storager *Storager) ReadAllDataFromFile() error {
 		}
 		storager.URLMap[URLMapKey{result.ShortURL, result.UserID}] = result
 		storager.usedUserIDs = append(storager.usedUserIDs, result.UserID)
+		// запоминаем максимальный userId, чтобы выдавать следующий за ним
 		if result.UserID > curMax {
 			curMax = result.UserID
 		}
@@ -148,13 +149,13 @@ func (storager *Storager) ReadAllDataFromFileForUserID(userID int) ([]models.Sav
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
-	// здесь нужно искать максимальное значение userID
 	for scanner.Scan() {
 		var result models.SavedURL
 		err := json.Unmarshal([]byte(scanner.Text()), &result)
 		if err != nil {
 			logger.Log.Debug("Failed unmarshal data", zap.Error(err))
 		}
+		// запоминаем только то, что связано с нужным пользователем
 		if result.UserID == userID {
 			filteredData = append(filteredData, result)
 			logger.Log.Info("Read new data from file", zap.Int("UUID", result.UUID), zap.String("OriginalURL", result.OriginalURL), zap.String("ShortURL", result.ShortURL), zap.Int("UserID", result.UserID), zap.Bool("Deleted", result.Deleted))
@@ -295,6 +296,7 @@ func (storager *Storager) GetLastUserID(ctx context.Context) (int, error) {
 			return lastUserID, err
 		}
 
+		storager.lastUserID = lastUserID
 		return lastUserID, nil
 	}
 

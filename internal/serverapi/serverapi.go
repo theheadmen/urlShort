@@ -49,11 +49,11 @@ func MakeChiServ(configStore *config.ConfigStore, storager *storager.Storager) c
 	dataStore := NewServerDataStore(configStore, storager)
 	router := chi.NewRouter()
 
-	// Add gzip middleware
+	// midlleware для gzip
 	router.Use(middleware.Compress(5, "text/html", "application/json"))
-	// cookie middleware
+	// middleware для куки
 	router.Use(dataStore.authMiddleware)
-	// Add the logger middleware
+	// middleware для логов
 	router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
@@ -104,19 +104,7 @@ func (dataStore *ServerDataStore) PostHandler(w http.ResponseWriter, r *http.Req
 		url = string(decompressed)
 	}
 
-	cookie, err := r.Cookie(jwtCookieKey)
-	// If any other error occurred, return a bad request error
-	if err != nil {
-		logger.Log.Info("cannot find cookie", zap.Error(err))
-		for _, cookie := range r.Cookies() {
-
-			logger.Log.Info("cookie that we have", zap.String("name", cookie.Name), zap.String("Value", cookie.Value))
-		}
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	token, userID, err := getTokenAndUserID(cookie)
+	token, userID, err := getTokenAndUserID(r)
 	if err != nil || !token.Valid {
 		logger.Log.Info("cannot find cookie", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
@@ -133,13 +121,7 @@ func (dataStore *ServerDataStore) PostHandler(w http.ResponseWriter, r *http.Req
 		headerStatus = http.StatusConflict
 	}
 	w.WriteHeader(headerStatus)
-	servShortURL := ""
-	// так как в тестах мы не используем флаги, нужно обезопасить себя
-	if dataStore.configStore.FlagShortRunAddr == "" {
-		servShortURL = "http://localhost:8080"
-	} else {
-		servShortURL = dataStore.configStore.FlagShortRunAddr
-	}
+	servShortURL := dataStore.configStore.FlagShortRunAddr
 
 	logger.Log.Info("After POST request", zap.String("body", url), zap.String("result", servShortURL+"/"+shortURL), zap.Int("userID", userID), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
 
@@ -161,15 +143,7 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	cookie, err := r.Cookie(jwtCookieKey)
-	// If any other error occurred, return a bad request error
-	if err != nil {
-		logger.Log.Info("cannot find cookie", zap.Error(err))
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	token, userID, err := getTokenAndUserID(cookie)
+	token, userID, err := getTokenAndUserID(r)
 	if err != nil || !token.Valid {
 		logger.Log.Info("cannot find cookie", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
@@ -186,13 +160,7 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 		headerStatus = http.StatusConflict
 	}
 	w.WriteHeader(headerStatus)
-	servShortURL := ""
-	// так как в тестах мы не используем флаги, нужно обезопасить себя
-	if dataStore.configStore.FlagShortRunAddr == "" {
-		servShortURL = "http://localhost:8080"
-	} else {
-		servShortURL = dataStore.configStore.FlagShortRunAddr
-	}
+	servShortURL := dataStore.configStore.FlagShortRunAddr
 
 	// заполняем модель ответа
 	resp := models.Response{
@@ -217,28 +185,14 @@ func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r 
 		return
 	}
 
-	cookie, err := r.Cookie(jwtCookieKey)
-	// If any other error occurred, return a bad request error
-	if err != nil {
-		logger.Log.Info("cannot find cookie", zap.Error(err))
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	token, userID, err := getTokenAndUserID(cookie)
+	token, userID, err := getTokenAndUserID(r)
 	if err != nil || !token.Valid {
 		logger.Log.Info("cannot find cookie", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	servShortURL := ""
-	// так как в тестах мы не используем флаги, нужно обезопасить себя
-	if dataStore.configStore.FlagShortRunAddr == "" {
-		servShortURL = "http://localhost:8080"
-	} else {
-		servShortURL = dataStore.configStore.FlagShortRunAddr
-	}
+	servShortURL := dataStore.configStore.FlagShortRunAddr
 
 	var resp []models.BatchResponse
 	var savedURLs []models.SavedURL
@@ -278,28 +232,14 @@ func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r 
 }
 
 func (dataStore *ServerDataStore) getByUserIDHandler(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie(jwtCookieKey)
-	// If any other error occurred, return a bad request error
-	if err != nil {
-		logger.Log.Info("cannot find cookie", zap.Error(err))
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	token, userID, err := getTokenAndUserID(cookie)
+	token, userID, err := getTokenAndUserID(r)
 	if err != nil || !token.Valid {
 		logger.Log.Info("cannot find cookie", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	servShortURL := ""
-	// так как в тестах мы не используем флаги, нужно обезопасить себя
-	if dataStore.configStore.FlagShortRunAddr == "" {
-		servShortURL = "http://localhost:8080"
-	} else {
-		servShortURL = dataStore.configStore.FlagShortRunAddr
-	}
+	servShortURL := dataStore.configStore.FlagShortRunAddr
 
 	var resp []models.BatchByUserIDResponse
 	savedURLs, err := dataStore.storager.ReadAllDataForUserID(r.Context(), userID)
@@ -384,7 +324,7 @@ func GenerateShortURL(url string) string {
 func (dataStore *ServerDataStore) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Get the JWT from the cookie
-		cookie, err := r.Cookie(jwtCookieKey)
+		_, err := r.Cookie(jwtCookieKey)
 		// If any other error occurred, return a bad request error
 		if err != nil && err != http.ErrNoCookie {
 			logger.Log.Info("error with cookie", zap.Error(err))
@@ -414,7 +354,7 @@ func (dataStore *ServerDataStore) authMiddleware(next http.Handler) http.Handler
 			next.ServeHTTP(w, r)
 		} else {
 			// Parse and validate the JWT
-			token, userID, err := getTokenAndUserID(cookie)
+			token, userID, err := getTokenAndUserID(r)
 
 			if err != nil || !token.Valid || !dataStore.storager.IsItCorrectUserID(userID) {
 				logger.Log.Info("invalid cookie", zap.Error(err), zap.Int("userID", userID))
@@ -429,8 +369,13 @@ func (dataStore *ServerDataStore) authMiddleware(next http.Handler) http.Handler
 	})
 }
 
-func getTokenAndUserID(cookie *http.Cookie) (*jwt.Token, int, error) {
+func getTokenAndUserID(r *http.Request) (*jwt.Token, int, error) {
 	claims := &UserClaims{}
+	cookie, err := r.Cookie(jwtCookieKey)
+	// If any other error occurred, return a bad request error
+	if err != nil {
+		return nil, 0, err
+	}
 
 	// Parse and validate the JWT
 	token, err := jwt.ParseWithClaims(cookie.Value, claims, func(token *jwt.Token) (interface{}, error) {
@@ -503,15 +448,7 @@ func GetTestCookie() *http.Cookie {
 }
 
 func (dataStore *ServerDataStore) deleteByUserIDHandler(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie(jwtCookieKey)
-	// If any other error occurred, return a bad request error
-	if err != nil {
-		logger.Log.Info("cannot find cookie", zap.Error(err))
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	token, userID, err := getTokenAndUserID(cookie)
+	token, userID, err := getTokenAndUserID(r)
 	if err != nil || !token.Valid {
 		logger.Log.Info("cannot find cookie", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)

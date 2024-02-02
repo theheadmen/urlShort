@@ -18,6 +18,16 @@ import (
 	"github.com/theheadmen/urlShort/internal/storager"
 )
 
+func NewTestConfigStore() *config.ConfigStore {
+	return &config.ConfigStore{
+		FlagRunAddr:      ":8080",
+		FlagShortRunAddr: "http://localhost:8080",
+		FlagLogLevel:     "debug",
+		FlagFile:         "/tmp/short-url-db.json",
+		FlagDB:           "",
+	}
+}
+
 func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyValue io.Reader, cookie *http.Cookie) (*http.Response, string) {
 	req, err := http.NewRequest(method, ts.URL+path, bodyValue)
 	require.NoError(t, err)
@@ -47,7 +57,8 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyVal
 }
 
 func TestSimpleHandler(t *testing.T) {
-	configStore := config.NewConfigStore()
+	configStore := NewTestConfigStore()
+
 	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[storager.URLMapKey]models.SavedURL), nil /*dbconnector*/)
 	ts := httptest.NewServer(serverapi.MakeChiServ(configStore, storager))
 	defer ts.Close()
@@ -83,7 +94,8 @@ func TestSimpleHandler(t *testing.T) {
 }
 
 func TestJsonPost(t *testing.T) {
-	configStore := config.NewConfigStore()
+	configStore := NewTestConfigStore()
+
 	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[storager.URLMapKey]models.SavedURL), nil /*dbconnector*/)
 	ts := httptest.NewServer(serverapi.MakeChiServ(configStore, storager))
 	defer ts.Close()
@@ -157,7 +169,8 @@ func TestJsonPost(t *testing.T) {
 }
 
 func TestJsonBatchPost(t *testing.T) {
-	configStore := config.NewConfigStore()
+	configStore := NewTestConfigStore()
+
 	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[storager.URLMapKey]models.SavedURL), nil /*dbconnector*/)
 	ts := httptest.NewServer(serverapi.MakeChiServ(configStore, storager))
 	defer ts.Close()
@@ -225,7 +238,8 @@ func TestJsonBatchPost(t *testing.T) {
 }
 
 func TestSequenceHandler(t *testing.T) {
-	configStore := config.NewConfigStore()
+	configStore := NewTestConfigStore()
+
 	testCases := []struct {
 		testURL          string
 		expectedShortURL string
@@ -319,7 +333,8 @@ func TestGenerateShortURL(t *testing.T) {
 }
 
 func TestCompressResponse(t *testing.T) {
-	configStore := config.NewConfigStore()
+	configStore := NewTestConfigStore()
+
 	storager := storager.NewStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, make(map[storager.URLMapKey]models.SavedURL), nil /*dbconnector*/)
 	dataStore := serverapi.NewServerDataStore(configStore, storager)
 	r := chi.NewRouter()
