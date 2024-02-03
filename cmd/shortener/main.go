@@ -12,7 +12,9 @@ import (
 	"github.com/theheadmen/urlShort/internal/models"
 	"github.com/theheadmen/urlShort/internal/serverapi"
 	config "github.com/theheadmen/urlShort/internal/serverconfig"
-	"github.com/theheadmen/urlShort/internal/storager"
+	"github.com/theheadmen/urlShort/internal/storage"
+	"github.com/theheadmen/urlShort/internal/storage/database"
+	"github.com/theheadmen/urlShort/internal/storage/file"
 	"go.uber.org/zap"
 )
 
@@ -34,7 +36,12 @@ func main() {
 	if err != nil {
 		logger.Log.Debug("Can't open stable connection with DB", zap.String("error", err.Error()))
 	}
-	storager := storager.NewStorager(configStore.FlagFile, true /*isWithFile*/, make(map[storager.URLMapKey]models.SavedURL), dbConnector, ctx)
+	var storager storage.Storage
+	if dbConnector != nil {
+		storager = database.NewDatabaseStorage(make(map[storage.URLMapKey]models.SavedURL), dbConnector, ctx)
+	} else {
+		storager = file.NewFileStorage(configStore.FlagFile, true /*isWithFile*/, make(map[storage.URLMapKey]models.SavedURL), ctx)
+	}
 
 	router := serverapi.MakeChiServ(configStore, storager)
 
@@ -45,7 +52,7 @@ func main() {
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Log.Fatal("Server is down", zap.String("error", err.Error()))
+			logger.Log.Info("Server is down", zap.String("error", err.Error()))
 		}
 	}()
 

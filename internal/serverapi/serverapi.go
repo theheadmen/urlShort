@@ -18,7 +18,7 @@ import (
 	"github.com/theheadmen/urlShort/internal/logger"
 	"github.com/theheadmen/urlShort/internal/models"
 	config "github.com/theheadmen/urlShort/internal/serverconfig"
-	"github.com/theheadmen/urlShort/internal/storager"
+	"github.com/theheadmen/urlShort/internal/storage"
 	"go.uber.org/zap"
 )
 
@@ -35,17 +35,17 @@ type UserClaims struct {
 
 type ServerDataStore struct {
 	configStore config.ConfigStore
-	storager    *storager.Storager
+	storager    storage.Storage
 }
 
-func NewServerDataStore(configStore *config.ConfigStore, storager *storager.Storager) *ServerDataStore {
+func NewServerDataStore(configStore *config.ConfigStore, storager storage.Storage) *ServerDataStore {
 	return &ServerDataStore{
 		configStore: *configStore,
 		storager:    storager,
 	}
 }
 
-func MakeChiServ(configStore *config.ConfigStore, storager *storager.Storager) chi.Router {
+func MakeChiServ(configStore *config.ConfigStore, storager storage.Storage) chi.Router {
 	dataStore := NewServerDataStore(configStore, storager)
 	router := chi.NewRouter()
 
@@ -298,15 +298,8 @@ func (dataStore *ServerDataStore) GetHandler(w http.ResponseWriter, r *http.Requ
 }
 
 func (dataStore *ServerDataStore) pingHandler(w http.ResponseWriter, r *http.Request) {
-	if dataStore.storager.DB == nil {
-		logger.Log.Info("DB is not alive, we don't need to ping")
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	err := dataStore.storager.DB.DB.PingContext(r.Context())
+	err := dataStore.storager.PingContext(r.Context())
 	if err != nil {
-		logger.Log.Info("Can't ping DB", zap.String("error", err.Error()))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}

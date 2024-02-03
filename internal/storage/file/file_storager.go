@@ -1,92 +1,76 @@
-package storager
+package file
 
 import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"sync"
 
-	"github.com/theheadmen/urlShort/internal/dbconnector"
 	"github.com/theheadmen/urlShort/internal/logger"
 	"github.com/theheadmen/urlShort/internal/models"
+	"github.com/theheadmen/urlShort/internal/storage"
 	"go.uber.org/zap"
 )
 
-type URLMapKey struct {
-	shortURL string
-	userID   int
-}
-
-type Storager struct {
+type FileStorage struct {
 	filePath    string
 	isWithFile  bool
-	URLMap      map[URLMapKey]models.SavedURL
+	URLMap      map[storage.URLMapKey]models.SavedURL
 	mu          sync.RWMutex
-	DB          *dbconnector.DBConnector
 	lastUserID  int
 	usedUserIDs []int
 }
 
-func NewStorager(filePath string, isWithFile bool, URLMap map[URLMapKey]models.SavedURL, dbConnector *dbconnector.DBConnector, ctx context.Context) *Storager {
+func NewFileStorage(filePath string, isWithFile bool, URLMap map[storage.URLMapKey]models.SavedURL, ctx context.Context) *FileStorage {
 	var empty []int
 
-	storager := &Storager{
+	storager := &FileStorage{
 		filePath:    filePath,
 		isWithFile:  isWithFile,
 		URLMap:      URLMap,
 		mu:          sync.RWMutex{},
-		DB:          dbConnector,
 		lastUserID:  0,
 		usedUserIDs: empty,
 	}
-	err := storager.readAllData(ctx)
+	err := storager.ReadAllData(ctx)
 	if err != nil {
 		logger.Log.Info("Failed to read data", zap.Error(err))
 	}
 	return storager
 }
 
-func NewStoragerWithoutReadingData(filePath string, isWithFile bool, URLMap map[URLMapKey]models.SavedURL, dbConnector *dbconnector.DBConnector) *Storager {
-	return &Storager{
+func NewFileStoragerWithoutReadingData(filePath string, isWithFile bool, URLMap map[storage.URLMapKey]models.SavedURL) *FileStorage {
+	return &FileStorage{
 		filePath:    filePath,
 		isWithFile:  isWithFile,
 		URLMap:      URLMap,
 		mu:          sync.RWMutex{},
-		DB:          dbConnector,
 		lastUserID:  1,
 		usedUserIDs: []int{1},
 	}
 }
 
-func (storager *Storager) readAllData(ctx context.Context) error {
-	if storager.DB != nil {
-		urls, err := storager.DB.SelectAllSavedURLs(ctx)
-		if err != nil {
-			logger.Log.Fatal("Failed to read from database", zap.Error(err))
-			return err
-		}
-
-		for _, url := range urls {
-			storager.URLMap[URLMapKey{url.ShortURL, url.UserID}] = url
-			storager.usedUserIDs = append(storager.usedUserIDs, url.UserID)
-			logger.Log.Info("Read new data from database", zap.Int("UUID", url.UUID), zap.String("OriginalURL", url.OriginalURL), zap.String("ShortURL", url.ShortURL), zap.Int("UserID", url.UserID), zap.Bool("Deleted", url.Deleted))
-		}
-
-		return err
+func NewFileStorageWithoutReadingData(filePath string, isWithFile bool, URLMap map[storage.URLMapKey]models.SavedURL) *FileStorage {
+	return &FileStorage{
+		filePath:    filePath,
+		isWithFile:  isWithFile,
+		URLMap:      URLMap,
+		mu:          sync.RWMutex{},
+		lastUserID:  1,
+		usedUserIDs: []int{1},
 	}
-
-	return storager.ReadAllDataFromFile()
 }
 
-func (storager *Storager) ReadAllDataFromFile() error {
+func (storager *FileStorage) ReadAllData(ctx context.Context) error {
 	// Read from file
 	file, err := os.Open(storager.filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			logger.Log.Debug("File does not exist. Leaving SavedURLs empty.")
 		} else {
-			logger.Log.Fatal("Failed to open file", zap.Error(err))
+			logger.Log.Info("Failed to open file", zap.Error(err))
 		}
 		return err
 	}
@@ -102,7 +86,7 @@ func (storager *Storager) ReadAllDataFromFile() error {
 		if err != nil {
 			logger.Log.Debug("Failed unmarshal data", zap.Error(err))
 		}
-		storager.URLMap[URLMapKey{result.ShortURL, result.UserID}] = result
+		storager.URLMap[storage.URLMapKey{ShortURL: result.ShortURL, UserID: result.UserID}] = result
 		storager.usedUserIDs = append(storager.usedUserIDs, result.UserID)
 		// запоминаем максимальный userId, чтобы выдавать следующий за ним
 		if result.UserID > curMax {
@@ -113,27 +97,13 @@ func (storager *Storager) ReadAllDataFromFile() error {
 	storager.lastUserID = curMax
 
 	if err := scanner.Err(); err != nil {
-		logger.Log.Fatal("Failed to read file", zap.Error(err))
+		logger.Log.Info("Failed to read file", zap.Error(err))
 	}
 
 	return err
 }
 
-func (storager *Storager) ReadAllDataForUserID(ctx context.Context, userID int) ([]models.SavedURL, error) {
-	if storager.DB != nil {
-		urls, err := storager.DB.SelectSavedURLsForUserID(ctx, userID)
-		if err != nil {
-			logger.Log.Fatal("Failed to read from database", zap.Error(err))
-			return []models.SavedURL{}, err
-		}
-
-		return urls, err
-	}
-
-	return storager.ReadAllDataFromFileForUserID(userID)
-}
-
-func (storager *Storager) ReadAllDataFromFileForUserID(userID int) ([]models.SavedURL, error) {
+func (storager *FileStorage) ReadAllDataForUserID(ctx context.Context, userID int) ([]models.SavedURL, error) {
 	filteredData := []models.SavedURL{}
 	// Read from file
 	file, err := os.Open(storager.filePath)
@@ -141,7 +111,7 @@ func (storager *Storager) ReadAllDataFromFileForUserID(userID int) ([]models.Sav
 		if os.IsNotExist(err) {
 			logger.Log.Debug("File does not exist. Leaving SavedURLs empty.")
 		} else {
-			logger.Log.Fatal("Failed to open file", zap.Error(err))
+			logger.Log.Info("Failed to open file", zap.Error(err))
 		}
 		return []models.SavedURL{}, err
 	}
@@ -163,14 +133,14 @@ func (storager *Storager) ReadAllDataFromFileForUserID(userID int) ([]models.Sav
 	}
 
 	if err := scanner.Err(); err != nil {
-		logger.Log.Fatal("Failed to read file", zap.Error(err))
+		logger.Log.Info("Failed to read file", zap.Error(err))
 	}
 
 	return filteredData, err
 }
 
 // возвращает true если это значение уже было записано ранее
-func (storager *Storager) StoreURL(ctx context.Context, shortURL string, originalURL string, userID int) bool {
+func (storager *FileStorage) StoreURL(ctx context.Context, shortURL string, originalURL string, userID int) bool {
 	_, ok := storager.GetURL(shortURL, userID)
 
 	if ok {
@@ -187,18 +157,14 @@ func (storager *Storager) StoreURL(ctx context.Context, shortURL string, origina
 	}
 
 	storager.mu.Lock()
-	storager.URLMap[URLMapKey{shortURL, userID}] = savedURL
+	storager.URLMap[storage.URLMapKey{ShortURL: shortURL, UserID: userID}] = savedURL
 	storager.mu.Unlock()
 
-	if storager.DB != nil {
-		storager.DB.InsertSavedURLBatch(ctx, []models.SavedURL{savedURL}, userID)
-	} else if storager.isWithFile {
-		storager.Save(savedURL)
-	}
+	storager.Save(savedURL)
 	return false
 }
 
-func (storager *Storager) StoreURLBatch(ctx context.Context, forStore []models.SavedURL, userID int) {
+func (storager *FileStorage) StoreURLBatch(ctx context.Context, forStore []models.SavedURL, userID int) {
 	var filteredStore []models.SavedURL
 	for _, savedURL := range forStore {
 		_, ok := storager.GetURL(savedURL.ShortURL, userID)
@@ -207,16 +173,14 @@ func (storager *Storager) StoreURLBatch(ctx context.Context, forStore []models.S
 			logger.Log.Info("We already have data for this url", zap.String("OriginalURL", savedURL.OriginalURL), zap.String("ShortURL", savedURL.ShortURL), zap.Int("UserID", userID), zap.Bool("Deleted", savedURL.Deleted))
 		} else {
 			storager.mu.Lock()
-			storager.URLMap[URLMapKey{savedURL.ShortURL, userID}] = savedURL
+			storager.URLMap[storage.URLMapKey{ShortURL: savedURL.ShortURL, UserID: userID}] = savedURL
 			storager.mu.Unlock()
 			filteredStore = append(filteredStore, savedURL)
 		}
 	}
 	// если у нас уже все и так было вставлено, нам не нужно ничего сохранять
 	if len(filteredStore) != 0 {
-		if storager.DB != nil {
-			storager.DB.InsertSavedURLBatch(ctx, filteredStore, userID)
-		} else if storager.isWithFile {
+		if storager.isWithFile {
 			for _, savedURL := range filteredStore {
 				storager.Save(savedURL)
 			}
@@ -224,37 +188,37 @@ func (storager *Storager) StoreURLBatch(ctx context.Context, forStore []models.S
 	}
 }
 
-func (storager *Storager) Save(savedURL models.SavedURL) error {
+func (storager *FileStorage) Save(savedURL models.SavedURL) error {
 	savedURLJSON, err := json.Marshal(savedURL)
 	if err != nil {
-		logger.Log.Fatal("Failed to marshal new data", zap.Error(err))
+		logger.Log.Info("Failed to marshal new data", zap.Error(err))
 		return err
 	}
 	file, err := os.OpenFile(storager.filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		logger.Log.Fatal("Failed to open file for writing", zap.Error(err))
+		logger.Log.Info("Failed to open file for writing", zap.Error(err))
 		return err
 	}
 	defer file.Close()
 
 	savedURLJSON = append(savedURLJSON, '\n')
 	if _, err := file.Write(savedURLJSON); err != nil {
-		logger.Log.Fatal("Failed to write to file", zap.Error(err))
+		logger.Log.Info("Failed to write to file", zap.Error(err))
 		return err
 	}
 	logger.Log.Info("Write new data to file", zap.Int("UUID", savedURL.UUID), zap.String("OriginalURL", savedURL.OriginalURL), zap.String("ShortURL", savedURL.ShortURL), zap.Int("UserID", savedURL.UserID))
 	return nil
 }
 
-func (storager *Storager) GetURL(shortURL string, userID int) (string, bool) {
+func (storager *FileStorage) GetURL(shortURL string, userID int) (string, bool) {
 	storager.mu.RLock()
-	originalSavedURL, ok := storager.URLMap[URLMapKey{shortURL, userID}]
+	originalSavedURL, ok := storager.URLMap[storage.URLMapKey{ShortURL: shortURL, UserID: userID}]
 	storager.mu.RUnlock()
 
 	return originalSavedURL.OriginalURL, ok
 }
 
-func (storager *Storager) GetURLForAnyUserID(shortURL string) (models.SavedURL, bool) {
+func (storager *FileStorage) GetURLForAnyUserID(shortURL string) (models.SavedURL, bool) {
 	storager.mu.RLock()
 	originalSavedURL, ok := storager.findEntityByShortURL(shortURL)
 	storager.mu.RUnlock()
@@ -262,16 +226,16 @@ func (storager *Storager) GetURLForAnyUserID(shortURL string) (models.SavedURL, 
 	return originalSavedURL, ok
 }
 
-func (storager *Storager) findEntityByShortURL(shortURL string) (models.SavedURL, bool) {
+func (storager *FileStorage) findEntityByShortURL(shortURL string) (models.SavedURL, bool) {
 	for key, value := range storager.URLMap {
-		if key.shortURL == shortURL {
+		if key.ShortURL == shortURL {
 			return value, true
 		}
 	}
 	return models.SavedURL{}, false
 }
 
-func (storager *Storager) IsItCorrectUserID(userID int) bool {
+func (storager *FileStorage) IsItCorrectUserID(userID int) bool {
 	storager.mu.RLock()
 	ok := storager.findUserID(userID)
 	storager.mu.RUnlock()
@@ -279,7 +243,7 @@ func (storager *Storager) IsItCorrectUserID(userID int) bool {
 	return ok
 }
 
-func (storager *Storager) findUserID(userID int) bool {
+func (storager *FileStorage) findUserID(userID int) bool {
 	for _, usedUserID := range storager.usedUserIDs {
 		if usedUserID == userID {
 			return true
@@ -288,50 +252,36 @@ func (storager *Storager) findUserID(userID int) bool {
 	return false
 }
 
-func (storager *Storager) GetLastUserID(ctx context.Context) (int, error) {
-	if storager.DB != nil {
-		lastUserID, err := storager.DB.IncrementID(ctx)
-		if err != nil {
-			logger.Log.Fatal("Failed to read last user id from database", zap.Error(err))
-			return lastUserID, err
-		}
-
-		storager.lastUserID = lastUserID
-		return lastUserID, nil
-	}
-
+func (storager *FileStorage) GetLastUserID(ctx context.Context) (int, error) {
 	storager.lastUserID = storager.lastUserID + 1
 	return storager.lastUserID, nil
 }
 
-func (storager *Storager) SaveUserID(userID int) {
+func (storager *FileStorage) SaveUserID(userID int) {
 	storager.mu.Lock()
 	storager.usedUserIDs = append(storager.usedUserIDs, userID)
 	storager.mu.Unlock()
 }
 
-func (storager *Storager) DeleteByUserID(ctx context.Context, shortURLs []string, userID int) error {
+func (storager *FileStorage) DeleteByUserID(ctx context.Context, shortURLs []string, userID int) error {
 	storager.mu.Lock()
 	for _, shortURL := range shortURLs {
 		originalSavedURL, ok := storager.findEntityByShortURL(shortURL)
 		if ok {
 			originalSavedURL.Deleted = true
-			storager.URLMap[URLMapKey{shortURL, userID}] = originalSavedURL
+			storager.URLMap[storage.URLMapKey{ShortURL: shortURL, UserID: userID}] = originalSavedURL
 		}
 	}
 	storager.mu.Unlock()
 
-	if storager.DB != nil {
-		err := storager.DB.UpdateDeletedSavedURLBatch(ctx, shortURLs, userID)
-		return err
-	} else if storager.isWithFile {
+	if storager.isWithFile {
 		// а что с файлом делать? Просто дописать?
 		logger.Log.Info("Update file")
 		filteredStore := []models.SavedURL{}
 
 		storager.mu.RLock()
 		for _, shortURL := range shortURLs {
-			originalSavedURL, ok := storager.URLMap[URLMapKey{shortURL, userID}]
+			originalSavedURL, ok := storager.URLMap[storage.URLMapKey{ShortURL: shortURL, UserID: userID}]
 			if ok {
 				filteredStore = append(filteredStore, originalSavedURL)
 			}
@@ -344,4 +294,9 @@ func (storager *Storager) DeleteByUserID(ctx context.Context, shortURLs []string
 		return nil
 	}
 	return nil
+}
+
+func (storager *FileStorage) PingContext(ctx context.Context) error {
+	logger.Log.Info("DB is not alive, we don't need to ping")
+	return fmt.Errorf("DB is not alive, we don't need to ping")
 }

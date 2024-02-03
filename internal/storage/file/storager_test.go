@@ -1,24 +1,19 @@
-package storager
+package file
 
 import (
+	"context"
 	"os"
-	"sync"
 	"testing"
 
 	"github.com/theheadmen/urlShort/internal/models"
+	"github.com/theheadmen/urlShort/internal/storage"
 )
 
 func TestStoragerReadAllWriteFile(t *testing.T) {
 	fname := `settings.json`
 	userID := 1
-	storager := Storager{
-		filePath:   fname,
-		isWithFile: false,
-		URLMap:     make(map[URLMapKey]models.SavedURL),
-		mu:         sync.RWMutex{},
-		DB:         nil,
-		lastUserID: userID,
-	}
+	ctx := context.Background()
+	storager := NewFileStorage(fname, false, make(map[storage.URLMapKey]models.SavedURL), ctx)
 	savedURL := models.SavedURL{
 		UUID:        1,
 		ShortURL:    `ShortURL`,
@@ -30,7 +25,7 @@ func TestStoragerReadAllWriteFile(t *testing.T) {
 		t.Error(err)
 	}
 
-	if err := storager.ReadAllDataFromFile(); err != nil {
+	if err := storager.ReadAllData(ctx); err != nil {
 		t.Error(err)
 	}
 	originalURL, ok := storager.GetURL("ShortURL", userID)
