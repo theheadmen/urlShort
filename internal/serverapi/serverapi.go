@@ -404,7 +404,7 @@ func getTokenAndUserID(r *http.Request) (*jwt.Token, int, error) {
 	}
 
 	if !token.Valid {
-		return token, 0, fmt.Errorf("Token is invalid")
+		return token, 0, fmt.Errorf("token is invalid")
 	}
 
 	userID, err := strconv.Atoi(claims.UserID)

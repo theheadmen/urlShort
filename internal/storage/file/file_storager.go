@@ -299,6 +299,6 @@ func (storager *FileStorage) DeleteByUserID(ctx context.Context, shortURLs []str
 }
 
 func (storager *FileStorage) PingContext(ctx context.Context) error {
-	logger.Log.Info("DB is not alive, we don't need to ping")
-	return fmt.Errorf("DB is not alive, we don't need to ping")
+	logger.Log.Info("db is not alive, we don't need to ping")
+	return fmt.Errorf("db is not alive, we don't need to ping")
 }
