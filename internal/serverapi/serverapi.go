@@ -2,6 +2,7 @@ package serverapi
 
 import (
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -496,7 +497,9 @@ func (dataStore *ServerDataStore) deleteByUserIDHandler(w http.ResponseWriter, r
 
 	// Start a new goroutine to perform the deletion
 	go func() {
-		err := dataStore.storager.DeleteByUserID(r.Context(), slice, userID)
+		// чтобы не зависеть от контекста запроса
+		ctx := context.Background()
+		err := dataStore.storager.DeleteByUserID(ctx, slice, userID)
 		if err != nil {
 			logger.Log.Info("Can't delete by user id", zap.String("error", err.Error()))
 		}

@@ -110,7 +110,7 @@ func (storager *DatabaseStorage) StoreURLBatch(ctx context.Context, forStore []m
 }
 
 func (storager *DatabaseStorage) GetURL(ctx context.Context, shortURL string, userID int) (string, bool, error) {
-	savedURLs, err := storager.DB.SelectSavedURLsForShortURLAndUserId(ctx, shortURL, userID)
+	savedURLs, err := storager.DB.SelectSavedURLsForShortURLAndUserID(ctx, shortURL, userID)
 	if err != nil {
 		return "", false, err
 	}

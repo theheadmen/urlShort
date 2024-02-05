@@ -182,7 +182,7 @@ func (dbConnector *DBConnector) SelectSavedURLsForShortURL(ctx context.Context, 
 	return savedURLs, err
 }
 
-func (dbConnector *DBConnector) SelectSavedURLsForShortURLAndUserId(ctx context.Context, shortURL string, userID int) ([]models.SavedURL, error) {
+func (dbConnector *DBConnector) SelectSavedURLsForShortURLAndUserID(ctx context.Context, shortURL string, userID int) ([]models.SavedURL, error) {
 	var savedURLs []models.SavedURL
 
 	sqlStatement := `SELECT id, shortURL, originalURL, userID, deleted FROM urls where shortURL = $1 AND userID = $2`
