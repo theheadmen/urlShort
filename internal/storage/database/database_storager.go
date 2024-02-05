@@ -31,7 +31,7 @@ func NewDatabaseStorage(URLMap map[storage.URLMapKey]models.SavedURL, dbConnecto
 	}
 	err := storager.ReadAllData(ctx)
 	if err != nil {
-		logger.Log.Info("Failed to read data", zap.Error(err))
+		logger.Log.Error("Failed to read data", zap.Error(err))
 	}
 	return storager
 }
@@ -39,12 +39,11 @@ func NewDatabaseStorage(URLMap map[storage.URLMapKey]models.SavedURL, dbConnecto
 func (storager *DatabaseStorage) ReadAllData(ctx context.Context) error {
 	urls, err := storager.DB.SelectAllSavedURLs(ctx)
 	if err != nil {
-		logger.Log.Info("Failed to read from database", zap.Error(err))
+		logger.Log.Error("Failed to read from database", zap.Error(err))
 		return err
 	}
 
 	for _, url := range urls {
-		storager.URLMap[storage.URLMapKey{ShortURL: url.ShortURL, UserID: url.UserID}] = url
 		storager.usedUserIDs = append(storager.usedUserIDs, url.UserID)
 		logger.Log.Info("Read new data from database", zap.Int("UUID", url.UUID), zap.String("OriginalURL", url.OriginalURL), zap.String("ShortURL", url.ShortURL), zap.Int("UserID", url.UserID), zap.Bool("Deleted", url.Deleted))
 	}
@@ -55,7 +54,7 @@ func (storager *DatabaseStorage) ReadAllData(ctx context.Context) error {
 func (storager *DatabaseStorage) ReadAllDataForUserID(ctx context.Context, userID int) ([]models.SavedURL, error) {
 	urls, err := storager.DB.SelectSavedURLsForUserID(ctx, userID)
 	if err != nil {
-		logger.Log.Info("Failed to read from database", zap.Error(err))
+		logger.Log.Error("Failed to read from database", zap.Error(err))
 		return []models.SavedURL{}, err
 	}
 
@@ -63,74 +62,79 @@ func (storager *DatabaseStorage) ReadAllDataForUserID(ctx context.Context, userI
 }
 
 // возвращает true если это значение уже было записано ранее
-func (storager *DatabaseStorage) StoreURL(ctx context.Context, shortURL string, originalURL string, userID int) bool {
-	_, ok := storager.GetURL(shortURL, userID)
+func (storager *DatabaseStorage) StoreURL(ctx context.Context, shortURL string, originalURL string, userID int) (bool, error) {
+	_, ok, err := storager.GetURL(ctx, shortURL, userID)
+	if err != nil {
+		return false, err
+	}
 
 	if ok {
 		logger.Log.Info("We already have data for this url", zap.String("OriginalURL", originalURL), zap.String("ShortURL", shortURL), zap.Bool("Deleted", false))
-		return true
+		return true, nil
 	}
 
 	savedURL := models.SavedURL{
-		UUID:        len(storager.URLMap),
+		UUID:        0,
 		ShortURL:    shortURL,
 		OriginalURL: originalURL,
 		UserID:      userID,
 		Deleted:     false,
 	}
 
-	storager.mu.Lock()
-	storager.URLMap[storage.URLMapKey{ShortURL: shortURL, UserID: userID}] = savedURL
-	storager.mu.Unlock()
+	err = storager.DB.InsertSavedURLBatch(ctx, []models.SavedURL{savedURL}, userID)
 
-	storager.DB.InsertSavedURLBatch(ctx, []models.SavedURL{savedURL}, userID)
-
-	return false
+	return false, err
 }
 
-func (storager *DatabaseStorage) StoreURLBatch(ctx context.Context, forStore []models.SavedURL, userID int) {
+func (storager *DatabaseStorage) StoreURLBatch(ctx context.Context, forStore []models.SavedURL, userID int) error {
 	var filteredStore []models.SavedURL
 	for _, savedURL := range forStore {
-		_, ok := storager.GetURL(savedURL.ShortURL, userID)
+		_, ok, err := storager.GetURL(ctx, savedURL.ShortURL, userID)
+		if err != nil {
+			return err
+		}
 
 		if ok {
 			logger.Log.Info("We already have data for this url", zap.String("OriginalURL", savedURL.OriginalURL), zap.String("ShortURL", savedURL.ShortURL), zap.Int("UserID", userID), zap.Bool("Deleted", savedURL.Deleted))
 		} else {
-			storager.mu.Lock()
-			storager.URLMap[storage.URLMapKey{ShortURL: savedURL.ShortURL, UserID: userID}] = savedURL
-			storager.mu.Unlock()
 			filteredStore = append(filteredStore, savedURL)
 		}
 	}
 	// если у нас уже все и так было вставлено, нам не нужно ничего сохранять
 	if len(filteredStore) != 0 {
-		storager.DB.InsertSavedURLBatch(ctx, filteredStore, userID)
+		err := storager.DB.InsertSavedURLBatch(ctx, filteredStore, userID)
+		return err
+	}
+
+	return nil
+}
+
+func (storager *DatabaseStorage) GetURL(ctx context.Context, shortURL string, userID int) (string, bool, error) {
+	savedURLs, err := storager.DB.SelectSavedURLsForShortURLAndUserId(ctx, shortURL, userID)
+	if err != nil {
+		return "", false, err
+	}
+
+	if len(savedURLs) == 0 {
+		return "", false, nil
+	} else {
+		// в теории и должно быть максимум одно значение, но для простоты используем массив
+		return savedURLs[0].OriginalURL, true, nil
 	}
 }
 
-func (storager *DatabaseStorage) GetURL(shortURL string, userID int) (string, bool) {
-	storager.mu.RLock()
-	originalSavedURL, ok := storager.URLMap[storage.URLMapKey{ShortURL: shortURL, UserID: userID}]
-	storager.mu.RUnlock()
-
-	return originalSavedURL.OriginalURL, ok
-}
-
-func (storager *DatabaseStorage) GetURLForAnyUserID(shortURL string) (models.SavedURL, bool) {
-	storager.mu.RLock()
-	originalSavedURL, ok := storager.findEntityByShortURL(shortURL)
-	storager.mu.RUnlock()
-
-	return originalSavedURL, ok
-}
-
-func (storager *DatabaseStorage) findEntityByShortURL(shortURL string) (models.SavedURL, bool) {
-	for key, value := range storager.URLMap {
-		if key.ShortURL == shortURL {
-			return value, true
-		}
+func (storager *DatabaseStorage) GetURLForAnyUserID(ctx context.Context, shortURL string) (models.SavedURL, bool, error) {
+	savedURLs, err := storager.DB.SelectSavedURLsForShortURL(ctx, shortURL)
+	if err != nil {
+		return models.SavedURL{}, false, err
 	}
-	return models.SavedURL{}, false
+
+	if len(savedURLs) == 0 {
+		return models.SavedURL{}, false, nil
+	} else {
+		// в теории и должно быть максимум одно значение, но для простоты используем массив
+		return savedURLs[0], true, nil
+	}
 }
 
 func (storager *DatabaseStorage) IsItCorrectUserID(userID int) bool {
@@ -153,7 +157,7 @@ func (storager *DatabaseStorage) findUserID(userID int) bool {
 func (storager *DatabaseStorage) GetLastUserID(ctx context.Context) (int, error) {
 	lastUserID, err := storager.DB.IncrementID(ctx)
 	if err != nil {
-		logger.Log.Info("Failed to read last user id from database", zap.Error(err))
+		logger.Log.Error("Failed to read last user id from database", zap.Error(err))
 		return lastUserID, err
 	}
 
@@ -168,16 +172,6 @@ func (storager *DatabaseStorage) SaveUserID(userID int) {
 }
 
 func (storager *DatabaseStorage) DeleteByUserID(ctx context.Context, shortURLs []string, userID int) error {
-	storager.mu.Lock()
-	for _, shortURL := range shortURLs {
-		originalSavedURL, ok := storager.findEntityByShortURL(shortURL)
-		if ok {
-			originalSavedURL.Deleted = true
-			storager.URLMap[storage.URLMapKey{ShortURL: shortURL, UserID: userID}] = originalSavedURL
-		}
-	}
-	storager.mu.Unlock()
-
 	err := storager.DB.UpdateDeletedSavedURLBatch(ctx, shortURLs, userID)
 	return err
 }

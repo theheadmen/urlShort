@@ -83,7 +83,7 @@ func MakeChiServ(configStore *config.ConfigStore, storager storage.Storage) chi.
 func (dataStore *ServerDataStore) PostHandler(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		logger.Log.Debug("cannot read request body", zap.Error(err))
+		logger.Log.Error("cannot read request body", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -91,13 +91,13 @@ func (dataStore *ServerDataStore) PostHandler(w http.ResponseWriter, r *http.Req
 	if r.Header.Get("Content-Encoding") == "gzip" {
 		gz, err := gzip.NewReader(strings.NewReader(string(body)))
 		if err != nil {
-			logger.Log.Debug("cannot decompress request body", zap.Error(err))
+			logger.Log.Error("cannot decompress request body", zap.Error(err))
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		decompressed, err := io.ReadAll(gz)
 		if err != nil {
-			logger.Log.Debug("cannot read decompressed request body", zap.Error(err))
+			logger.Log.Error("cannot read decompressed request body", zap.Error(err))
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -106,14 +106,19 @@ func (dataStore *ServerDataStore) PostHandler(w http.ResponseWriter, r *http.Req
 
 	token, userID, err := getTokenAndUserID(r)
 	if err != nil || !token.Valid {
-		logger.Log.Info("cannot find cookie", zap.Error(err))
+		logger.Log.Error("cannot find cookie", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	shortURL := GenerateShortURL(url)
 
-	isAlreadyStored := dataStore.storager.StoreURL(r.Context(), shortURL, url, userID)
+	isAlreadyStored, err := dataStore.storager.StoreURL(r.Context(), shortURL, url, userID)
+	if err != nil {
+		logger.Log.Error("cannot store url", zap.String("url", url), zap.Error(err))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
 	w.Header().Set("Content-Type", "text/html")
 	headerStatus := http.StatusCreated
@@ -132,7 +137,7 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 	var req models.Request
 	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(&req); err != nil {
-		logger.Log.Debug("cannot decode request JSON body", zap.Error(err))
+		logger.Log.Error("cannot decode request JSON body", zap.Error(err))
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		return
 	}
@@ -145,14 +150,19 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 
 	token, userID, err := getTokenAndUserID(r)
 	if err != nil || !token.Valid {
-		logger.Log.Info("cannot find cookie", zap.Error(err))
+		logger.Log.Error("cannot find cookie", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	shortURL := GenerateShortURL(req.URL)
 
-	isAlreadyStored := dataStore.storager.StoreURL(r.Context(), shortURL, req.URL, userID)
+	isAlreadyStored, err := dataStore.storager.StoreURL(r.Context(), shortURL, req.URL, userID)
+	if err != nil {
+		logger.Log.Error("cannot store url", zap.String("url", req.URL), zap.Error(err))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	headerStatus := http.StatusCreated
@@ -171,7 +181,7 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(resp); err != nil {
-		logger.Log.Debug("error encoding response", zap.Error(err))
+		logger.Log.Error("error encoding response", zap.Error(err))
 		return
 	}
 }
@@ -180,14 +190,14 @@ func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r 
 	var req []models.BatchRequest
 	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(&req); err != nil {
-		logger.Log.Debug("cannot decode request JSON body", zap.Error(err))
+		logger.Log.Error("cannot decode request JSON body", zap.Error(err))
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		return
 	}
 
 	token, userID, err := getTokenAndUserID(r)
 	if err != nil || !token.Valid {
-		logger.Log.Info("cannot find cookie", zap.Error(err))
+		logger.Log.Error("cannot find cookie", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -217,7 +227,12 @@ func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r 
 		logger.Log.Info("Readed from batch request", zap.String("body", request.OriginalURL), zap.String("result", servShortURL+"/"+shortURL), zap.Int("userID", userID))
 	}
 
-	dataStore.storager.StoreURLBatch(r.Context(), savedURLs, userID)
+	err = dataStore.storager.StoreURLBatch(r.Context(), savedURLs, userID)
+	if err != nil {
+		logger.Log.Error("cannot store urls", zap.Error(err))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -226,7 +241,7 @@ func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r 
 
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(resp); err != nil {
-		logger.Log.Debug("error encoding response", zap.Error(err))
+		logger.Log.Error("error encoding response", zap.Error(err))
 		return
 	}
 }
@@ -234,7 +249,7 @@ func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r 
 func (dataStore *ServerDataStore) getByUserIDHandler(w http.ResponseWriter, r *http.Request) {
 	token, userID, err := getTokenAndUserID(r)
 	if err != nil || !token.Valid {
-		logger.Log.Info("cannot find cookie", zap.Error(err))
+		logger.Log.Error("cannot find cookie", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -244,7 +259,7 @@ func (dataStore *ServerDataStore) getByUserIDHandler(w http.ResponseWriter, r *h
 	var resp []models.BatchByUserIDResponse
 	savedURLs, err := dataStore.storager.ReadAllDataForUserID(r.Context(), userID)
 	if err != nil {
-		logger.Log.Info("cannot read data for user", zap.Error(err))
+		logger.Log.Error("cannot read data for user", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -270,14 +285,19 @@ func (dataStore *ServerDataStore) getByUserIDHandler(w http.ResponseWriter, r *h
 
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(resp); err != nil {
-		logger.Log.Debug("error encoding response", zap.Error(err))
+		logger.Log.Error("error encoding response", zap.Error(err))
 		return
 	}
 }
 
 func (dataStore *ServerDataStore) GetHandler(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/")
-	originalSavedURL, ok := dataStore.storager.GetURLForAnyUserID(id)
+	originalSavedURL, ok, err := dataStore.storager.GetURLForAnyUserID(r.Context(), id)
+	if err != nil {
+		logger.Log.Error("cannot get data for id", zap.String("id", id), zap.Error(err))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
 	if !ok {
 		logger.Log.Info("cannot find url by id", zap.String("id", id))
@@ -320,7 +340,7 @@ func (dataStore *ServerDataStore) authMiddleware(next http.Handler) http.Handler
 		_, err := r.Cookie(jwtCookieKey)
 		// If any other error occurred, return a bad request error
 		if err != nil && err != http.ErrNoCookie {
-			logger.Log.Info("error with cookie", zap.Error(err))
+			logger.Log.Error("error with cookie", zap.Error(err))
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -328,14 +348,14 @@ func (dataStore *ServerDataStore) authMiddleware(next http.Handler) http.Handler
 		// If the cookie is not found, make a cookie
 		if err == http.ErrNoCookie {
 			if isBatchByUserID {
-				logger.Log.Info("No cookie and isBatchByUserID", zap.Error(err))
+				logger.Log.Error("No cookie and isBatchByUserID", zap.Error(err))
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
 
 			lastUserID, err := dataStore.storager.GetLastUserID(r.Context())
 			if err != nil {
-				logger.Log.Info("can't get userID for cookie", zap.Error(err))
+				logger.Log.Error("can't get userID for cookie", zap.Error(err))
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -350,7 +370,7 @@ func (dataStore *ServerDataStore) authMiddleware(next http.Handler) http.Handler
 			token, userID, err := getTokenAndUserID(r)
 
 			if err != nil || !token.Valid || !dataStore.storager.IsItCorrectUserID(userID) {
-				logger.Log.Info("invalid cookie", zap.Error(err), zap.Int("userID", userID))
+				logger.Log.Error("invalid cookie", zap.Error(err), zap.Int("userID", userID))
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
@@ -378,8 +398,12 @@ func getTokenAndUserID(r *http.Request) (*jwt.Token, int, error) {
 		return []byte(jwtSecretKey), nil
 	})
 
-	if err != nil || !token.Valid {
-		return token, 0, err
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if !token.Valid {
+		return token, 0, fmt.Errorf("Token is invalid")
 	}
 
 	userID, err := strconv.Atoi(claims.UserID)
@@ -443,7 +467,7 @@ func GetTestCookie() *http.Cookie {
 func (dataStore *ServerDataStore) deleteByUserIDHandler(w http.ResponseWriter, r *http.Request) {
 	token, userID, err := getTokenAndUserID(r)
 	if err != nil || !token.Valid {
-		logger.Log.Info("cannot find cookie", zap.Error(err))
+		logger.Log.Error("cannot find cookie", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -452,7 +476,7 @@ func (dataStore *ServerDataStore) deleteByUserIDHandler(w http.ResponseWriter, r
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		logger.Log.Info("Error reading request body", zap.Error(err))
+		logger.Log.Error("Error reading request body", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -460,7 +484,7 @@ func (dataStore *ServerDataStore) deleteByUserIDHandler(w http.ResponseWriter, r
 
 	err = json.Unmarshal(body, &slice)
 	if err != nil {
-		logger.Log.Info("cannot decode request JSON body", zap.Error(err), zap.String("body", string(body)))
+		logger.Log.Error("cannot decode request JSON body", zap.Error(err), zap.String("body", string(body)))
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		return
 	}
@@ -470,12 +494,13 @@ func (dataStore *ServerDataStore) deleteByUserIDHandler(w http.ResponseWriter, r
 		logger.Log.Info("Try to delete", zap.String("ShortURL", URL), zap.Int("userID", userID))
 	}
 
-	err = dataStore.storager.DeleteByUserID(r.Context(), slice, userID)
-	if err != nil {
-		logger.Log.Info("Can't delete by user id", zap.String("error", err.Error()))
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
+	// Start a new goroutine to perform the deletion
+	go func() {
+		err := dataStore.storager.DeleteByUserID(r.Context(), slice, userID)
+		if err != nil {
+			logger.Log.Info("Can't delete by user id", zap.String("error", err.Error()))
+		}
+	}()
 
 	w.WriteHeader(http.StatusAccepted)
 }

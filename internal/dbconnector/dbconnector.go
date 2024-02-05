@@ -59,13 +59,13 @@ func NewDBConnector(ctx context.Context, psqlInfo string) (*DBConnector, error) 
 func (dbConnector *DBConnector) InsertSavedURLBatch(ctx context.Context, savedURLs []models.SavedURL, userID int) error {
 	tx, err := dbConnector.DB.BeginTx(ctx, nil)
 	if err != nil {
-		logger.Log.Info("Failed to initiate transaction for DB", zap.Error(err))
+		logger.Log.Error("Failed to initiate transaction for DB", zap.Error(err))
 		return err
 	}
 
 	stmt, err := tx.PrepareContext(ctx, "INSERT INTO urls(shortURL, originalURL, userID) VALUES($1, $2, $3)")
 	if err != nil {
-		logger.Log.Info("Failed to prepate query for DB", zap.Error(err))
+		logger.Log.Error("Failed to prepate query for DB", zap.Error(err))
 		tx.Rollback()
 		return err
 	}
@@ -75,7 +75,7 @@ func (dbConnector *DBConnector) InsertSavedURLBatch(ctx context.Context, savedUR
 		_, err := stmt.ExecContext(ctx, savedURL.ShortURL, savedURL.OriginalURL, userID)
 		if err != nil {
 			tx.Rollback()
-			logger.Log.Info("Failed to insert query for DB", zap.Error(err))
+			logger.Log.Error("Failed to insert query for DB", zap.Error(err))
 			return err
 		}
 		logger.Log.Info("Write new data to database", zap.String("OriginalURL", savedURL.OriginalURL), zap.String("ShortURL", savedURL.ShortURL), zap.Int("userID", userID))
@@ -83,7 +83,7 @@ func (dbConnector *DBConnector) InsertSavedURLBatch(ctx context.Context, savedUR
 
 	err = tx.Commit()
 	if err != nil {
-		logger.Log.Info("Failed to commit transaction DB", zap.Error(err))
+		logger.Log.Error("Failed to commit transaction DB", zap.Error(err))
 		return err
 	}
 
@@ -94,13 +94,12 @@ func (dbConnector *DBConnector) InsertSavedURLBatch(ctx context.Context, savedUR
 
 func (dbConnector *DBConnector) SelectAllSavedURLs(ctx context.Context) ([]models.SavedURL, error) {
 	var savedURLs []models.SavedURL
-	var emptyURLs []models.SavedURL
 
 	sqlStatement := `SELECT id, shortURL, originalURL, userID, deleted FROM urls`
 	rows, err := dbConnector.DB.QueryContext(ctx, sqlStatement)
 	if err != nil {
-		logger.Log.Info("Failed to read from database", zap.Error(err))
-		return emptyURLs, err
+		logger.Log.Error("Failed to read from database", zap.Error(err))
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -108,16 +107,16 @@ func (dbConnector *DBConnector) SelectAllSavedURLs(ctx context.Context) ([]model
 		var savedURL models.SavedURL
 		err = rows.Scan(&savedURL.UUID, &savedURL.ShortURL, &savedURL.OriginalURL, &savedURL.UserID, &savedURL.Deleted)
 		if err != nil {
-			logger.Log.Info("Failed to read from database", zap.Error(err))
-			return emptyURLs, err
+			logger.Log.Error("Failed to read from database", zap.Error(err))
+			return nil, err
 		}
 		savedURLs = append(savedURLs, savedURL)
 	}
 
 	err = rows.Err()
 	if err != nil {
-		logger.Log.Info("Failed to read from database", zap.Error(err))
-		return emptyURLs, err
+		logger.Log.Error("Failed to read from database", zap.Error(err))
+		return nil, err
 	}
 
 	return savedURLs, err
@@ -125,13 +124,12 @@ func (dbConnector *DBConnector) SelectAllSavedURLs(ctx context.Context) ([]model
 
 func (dbConnector *DBConnector) SelectSavedURLsForUserID(ctx context.Context, userID int) ([]models.SavedURL, error) {
 	var savedURLs []models.SavedURL
-	var emptyURLs []models.SavedURL
 
 	sqlStatement := `SELECT id, shortURL, originalURL, userID, deleted FROM urls where userID = $1`
 	rows, err := dbConnector.DB.QueryContext(ctx, sqlStatement, userID)
 	if err != nil {
-		logger.Log.Info("Failed to read from database", zap.Error(err))
-		return emptyURLs, err
+		logger.Log.Error("Failed to read from database", zap.Error(err))
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -139,16 +137,76 @@ func (dbConnector *DBConnector) SelectSavedURLsForUserID(ctx context.Context, us
 		var savedURL models.SavedURL
 		err = rows.Scan(&savedURL.UUID, &savedURL.ShortURL, &savedURL.OriginalURL, &savedURL.UserID, &savedURL.Deleted)
 		if err != nil {
-			logger.Log.Info("Failed to read from database", zap.Error(err))
-			return emptyURLs, err
+			logger.Log.Error("Failed to read from database", zap.Error(err))
+			return nil, err
 		}
 		savedURLs = append(savedURLs, savedURL)
 	}
 
 	err = rows.Err()
 	if err != nil {
-		logger.Log.Info("Failed to read from database", zap.Error(err))
-		return emptyURLs, err
+		logger.Log.Error("Failed to read from database", zap.Error(err))
+		return nil, err
+	}
+
+	return savedURLs, err
+}
+
+func (dbConnector *DBConnector) SelectSavedURLsForShortURL(ctx context.Context, shortURL string) ([]models.SavedURL, error) {
+	var savedURLs []models.SavedURL
+
+	sqlStatement := `SELECT id, shortURL, originalURL, userID, deleted FROM urls where shortURL = $1`
+	rows, err := dbConnector.DB.QueryContext(ctx, sqlStatement, shortURL)
+	if err != nil {
+		logger.Log.Error("Failed to read from database", zap.Error(err))
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var savedURL models.SavedURL
+		err = rows.Scan(&savedURL.UUID, &savedURL.ShortURL, &savedURL.OriginalURL, &savedURL.UserID, &savedURL.Deleted)
+		if err != nil {
+			logger.Log.Error("Failed to read from database", zap.Error(err))
+			return nil, err
+		}
+		savedURLs = append(savedURLs, savedURL)
+	}
+
+	err = rows.Err()
+	if err != nil {
+		logger.Log.Error("Failed to read from database", zap.Error(err))
+		return nil, err
+	}
+
+	return savedURLs, err
+}
+
+func (dbConnector *DBConnector) SelectSavedURLsForShortURLAndUserId(ctx context.Context, shortURL string, userID int) ([]models.SavedURL, error) {
+	var savedURLs []models.SavedURL
+
+	sqlStatement := `SELECT id, shortURL, originalURL, userID, deleted FROM urls where shortURL = $1 AND userID = $2`
+	rows, err := dbConnector.DB.QueryContext(ctx, sqlStatement, shortURL, userID)
+	if err != nil {
+		logger.Log.Error("Failed to read from database", zap.Error(err))
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var savedURL models.SavedURL
+		err = rows.Scan(&savedURL.UUID, &savedURL.ShortURL, &savedURL.OriginalURL, &savedURL.UserID, &savedURL.Deleted)
+		if err != nil {
+			logger.Log.Error("Failed to read from database", zap.Error(err))
+			return nil, err
+		}
+		savedURLs = append(savedURLs, savedURL)
+	}
+
+	err = rows.Err()
+	if err != nil {
+		logger.Log.Error("Failed to read from database", zap.Error(err))
+		return nil, err
 	}
 
 	return savedURLs, err
@@ -200,7 +258,7 @@ func (dbConnector *DBConnector) UpdateDeletedSavedURLBatch(ctx context.Context, 
 		AND userID = $2;
 	`)
 	if err != nil {
-		logger.Log.Info("Failed to prepare the statement: ", zap.Error(err))
+		logger.Log.Error("Failed to prepare the statement: ", zap.Error(err))
 		return err
 	}
 	defer stmt.Close()
@@ -208,14 +266,14 @@ func (dbConnector *DBConnector) UpdateDeletedSavedURLBatch(ctx context.Context, 
 	// Execute the statement
 	res, err := stmt.ExecContext(ctx, pq.Array(shortURLs), userID)
 	if err != nil {
-		logger.Log.Info("Failed to execute the statement: ", zap.Error(err))
+		logger.Log.Error("Failed to execute the statement: ", zap.Error(err))
 		return err
 	}
 
 	// Check how many rows were affected
 	rowsAffected, err := res.RowsAffected()
 	if err != nil {
-		logger.Log.Info("Failed to get the number of rows affected: ", zap.Error(err))
+		logger.Log.Error("Failed to get the number of rows affected: ", zap.Error(err))
 		return err
 	}
 
