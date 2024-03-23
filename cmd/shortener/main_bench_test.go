@@ -138,7 +138,7 @@ func BenchmarkTestJsonBatchPost(t *testing.B) {
 	for i := 0; i < t.N; i++ {
 		testValue := strings.NewReader(tc.body)
 		resp, get := testBRequest(t, ts, tc.method, "/api/shorten/batch", testValue, nil)
-		get = strings.TrimSuffix(string(get), "\n")
+		strings.TrimSuffix(string(get), "\n")
 		resp.Body.Close()
 	}
 }
