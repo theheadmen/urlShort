@@ -52,17 +52,6 @@ func NewFileStoragerWithoutReadingData(filePath string, isWithFile bool, URLMap 
 	}
 }
 
-func NewFileStorageWithoutReadingData(filePath string, isWithFile bool, URLMap map[storage.URLMapKey]models.SavedURL) *FileStorage {
-	return &FileStorage{
-		filePath:    filePath,
-		isWithFile:  isWithFile,
-		URLMap:      URLMap,
-		mu:          sync.RWMutex{},
-		lastUserID:  1,
-		usedUserIDs: []int{1},
-	}
-}
-
 func (storager *FileStorage) ReadAllData(ctx context.Context) error {
 	// Read from file
 	file, err := os.Open(storager.filePath)
