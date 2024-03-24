@@ -1,3 +1,4 @@
+// Package file предоставляет реализацию хранилища данных, которая использует файловую систему для хранения данных.
 package file
 
 import (
@@ -14,6 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// FileStorage реализует интерфейс Storage для хранения данных в файле.
 type FileStorage struct {
 	filePath    string
 	isWithFile  bool
@@ -23,6 +25,7 @@ type FileStorage struct {
 	usedUserIDs []int
 }
 
+// NewFileStorage создает новый экземпляр FileStorage и читает данные из файла.
 func NewFileStorage(filePath string, isWithFile bool, URLMap map[storage.URLMapKey]models.SavedURL, ctx context.Context) *FileStorage {
 	var empty []int
 
@@ -41,6 +44,7 @@ func NewFileStorage(filePath string, isWithFile bool, URLMap map[storage.URLMapK
 	return storager
 }
 
+// NewFileStoragerWithoutReadingData создает новый экземпляр FileStorage без чтения данных из файла.
 func NewFileStoragerWithoutReadingData(filePath string, isWithFile bool, URLMap map[storage.URLMapKey]models.SavedURL) *FileStorage {
 	return &FileStorage{
 		filePath:    filePath,
@@ -52,6 +56,7 @@ func NewFileStoragerWithoutReadingData(filePath string, isWithFile bool, URLMap 
 	}
 }
 
+// ReadAllData читает все данные из файла и заполняет их в FileStorage.
 func (storager *FileStorage) ReadAllData(ctx context.Context) error {
 	// Read from file
 	file, err := os.Open(storager.filePath)
@@ -92,6 +97,7 @@ func (storager *FileStorage) ReadAllData(ctx context.Context) error {
 	return err
 }
 
+// ReadAllDataForUserID читает все данные для определенного пользователя из файла.
 func (storager *FileStorage) ReadAllDataForUserID(ctx context.Context, userID int) ([]models.SavedURL, error) {
 	filteredData := []models.SavedURL{}
 	// Read from file
@@ -128,7 +134,7 @@ func (storager *FileStorage) ReadAllDataForUserID(ctx context.Context, userID in
 	return filteredData, err
 }
 
-// возвращает true если это значение уже было записано ранее
+// StoreURL сохраняет URL в FileStorage и файл.
 func (storager *FileStorage) StoreURL(ctx context.Context, shortURL string, originalURL string, userID int) (bool, error) {
 	_, ok := storager.GetURL(shortURL, userID)
 
@@ -153,6 +159,7 @@ func (storager *FileStorage) StoreURL(ctx context.Context, shortURL string, orig
 	return false, nil
 }
 
+// StoreURLBatch сохраняет несколько URL в FileStorage и файл.
 func (storager *FileStorage) StoreURLBatch(ctx context.Context, forStore []models.SavedURL, userID int) error {
 	var filteredStore []models.SavedURL
 	for _, savedURL := range forStore {
@@ -179,6 +186,7 @@ func (storager *FileStorage) StoreURLBatch(ctx context.Context, forStore []model
 	return nil
 }
 
+// Save сохраняет URL в файл.
 func (storager *FileStorage) Save(savedURL models.SavedURL) error {
 	savedURLJSON, err := json.Marshal(savedURL)
 	if err != nil {
@@ -201,6 +209,7 @@ func (storager *FileStorage) Save(savedURL models.SavedURL) error {
 	return nil
 }
 
+// GetURL возвращает URL из FileStorage.
 func (storager *FileStorage) GetURL(shortURL string, userID int) (string, bool) {
 	storager.mu.RLock()
 	originalSavedURL, ok := storager.URLMap[storage.URLMapKey{ShortURL: shortURL, UserID: userID}]
@@ -209,6 +218,7 @@ func (storager *FileStorage) GetURL(shortURL string, userID int) (string, bool) 
 	return originalSavedURL.OriginalURL, ok
 }
 
+// GetURLForAnyUserID возвращает URL, независимо от пользователя.
 func (storager *FileStorage) GetURLForAnyUserID(ctx context.Context, shortURL string) (models.SavedURL, bool, error) {
 	storager.mu.RLock()
 	originalSavedURL, ok := storager.findEntityByShortURL(shortURL)
@@ -217,6 +227,7 @@ func (storager *FileStorage) GetURLForAnyUserID(ctx context.Context, shortURL st
 	return originalSavedURL, ok, nil
 }
 
+// findEntityByShortURL ищет первый полный URL для заданного короткого URL
 func (storager *FileStorage) findEntityByShortURL(shortURL string) (models.SavedURL, bool) {
 	for key, value := range storager.URLMap {
 		if key.ShortURL == shortURL {
@@ -226,6 +237,7 @@ func (storager *FileStorage) findEntityByShortURL(shortURL string) (models.Saved
 	return models.SavedURL{}, false
 }
 
+// IsItCorrectUserID проверяет, является ли идентификатор пользователя корректным.
 func (storager *FileStorage) IsItCorrectUserID(userID int) bool {
 	storager.mu.RLock()
 	ok := storager.findUserID(userID)
@@ -234,6 +246,7 @@ func (storager *FileStorage) IsItCorrectUserID(userID int) bool {
 	return ok
 }
 
+// findUserID ищет пользователя по заданному ID
 func (storager *FileStorage) findUserID(userID int) bool {
 	for _, usedUserID := range storager.usedUserIDs {
 		if usedUserID == userID {
@@ -243,17 +256,20 @@ func (storager *FileStorage) findUserID(userID int) bool {
 	return false
 }
 
+// GetLastUserID возвращает последний использованный идентификатор пользователя.
 func (storager *FileStorage) GetLastUserID(ctx context.Context) (int, error) {
 	storager.lastUserID = storager.lastUserID + 1
 	return storager.lastUserID, nil
 }
 
+// SaveUserID сохраняет идентификатор пользователя.
 func (storager *FileStorage) SaveUserID(userID int) {
 	storager.mu.Lock()
 	storager.usedUserIDs = append(storager.usedUserIDs, userID)
 	storager.mu.Unlock()
 }
 
+// DeleteByUserID удаляет URL, принадлежащие определенному пользователю.
 func (storager *FileStorage) DeleteByUserID(ctx context.Context, shortURLs []string, userID int) error {
 	storager.mu.Lock()
 	for _, shortURL := range shortURLs {
@@ -287,6 +303,7 @@ func (storager *FileStorage) DeleteByUserID(ctx context.Context, shortURLs []str
 	return nil
 }
 
+// PingContext проверяет соединение с хранилищем.
 func (storager *FileStorage) PingContext(ctx context.Context) error {
 	logger.Log.Info("db is not alive, we don't need to ping")
 	return fmt.Errorf("db is not alive, we don't need to ping")
