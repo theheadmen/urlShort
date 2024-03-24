@@ -11,10 +11,13 @@ import (
 	"github.com/lib/pq"
 )
 
+// DBConnector представляет собой структуру для работы с базой данных.
 type DBConnector struct {
 	DB *sql.DB
 }
 
+// NewDBConnector создает новый экземпляр DBConnector и инициализирует подключение к базе данных.
+// Если подключение не удается, возвращает ошибку.
 func NewDBConnector(ctx context.Context, psqlInfo string) (*DBConnector, error) {
 	// for local tests can be used "host=localhost port=5432 user=postgres password=example dbname=godb sslmode=disable"
 	db, err := sql.Open("postgres", psqlInfo)
@@ -56,6 +59,8 @@ func NewDBConnector(ctx context.Context, psqlInfo string) (*DBConnector, error) 
 	}, nil
 }
 
+// InsertSavedURLBatch вставляет несколько URL в базу данных в рамках одной транзакции.
+// Если транзакция не удается, возвращает ошибку.
 func (dbConnector *DBConnector) InsertSavedURLBatch(ctx context.Context, savedURLs []models.SavedURL, userID int) error {
 	tx, err := dbConnector.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -92,6 +97,8 @@ func (dbConnector *DBConnector) InsertSavedURLBatch(ctx context.Context, savedUR
 	return err
 }
 
+// SelectAllSavedURLs возвращает все сохраненные URL из базы данных.
+// Если чтение не удается, возвращает ошибку.
 func (dbConnector *DBConnector) SelectAllSavedURLs(ctx context.Context) ([]models.SavedURL, error) {
 	var savedURLs []models.SavedURL
 
@@ -122,6 +129,8 @@ func (dbConnector *DBConnector) SelectAllSavedURLs(ctx context.Context) ([]model
 	return savedURLs, err
 }
 
+// SelectSavedURLsForUserID возвращает все сохраненные URL для определенного пользователя.
+// Если чтение не удается, возвращает ошибку.
 func (dbConnector *DBConnector) SelectSavedURLsForUserID(ctx context.Context, userID int) ([]models.SavedURL, error) {
 	var savedURLs []models.SavedURL
 
@@ -152,6 +161,8 @@ func (dbConnector *DBConnector) SelectSavedURLsForUserID(ctx context.Context, us
 	return savedURLs, err
 }
 
+// SelectSavedURLsForUserID возвращает все сохраненные URL для определенного URL.
+// Если чтение не удается, возвращает ошибку.
 func (dbConnector *DBConnector) SelectSavedURLsForShortURL(ctx context.Context, shortURL string) ([]models.SavedURL, error) {
 	var savedURLs []models.SavedURL
 
@@ -182,6 +193,8 @@ func (dbConnector *DBConnector) SelectSavedURLsForShortURL(ctx context.Context, 
 	return savedURLs, err
 }
 
+// SelectSavedURLsForShortURL возвращает все сохраненные URL для определенного короткого URL.
+// Если чтение не удается, возвращает ошибку.
 func (dbConnector *DBConnector) SelectSavedURLsForShortURLAndUserID(ctx context.Context, shortURL string, userID int) ([]models.SavedURL, error) {
 	var savedURLs []models.SavedURL
 
@@ -212,25 +225,7 @@ func (dbConnector *DBConnector) SelectSavedURLsForShortURLAndUserID(ctx context.
 	return savedURLs, err
 }
 
-// GetOrInsertID checks if the table is empty and inserts a default value if it is.
-func (dbConnector *DBConnector) GetOrInsertID(ctx context.Context) (int, error) {
-	// Insert a default value if the table is empty
-	_, err := dbConnector.DB.ExecContext(ctx, "INSERT INTO last_user_id (id) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM last_user_id)")
-	if err != nil {
-		return 0, err
-	}
-
-	// Retrieve the id
-	var id int
-	err = dbConnector.DB.QueryRowContext(ctx, "SELECT id FROM last_user_id").Scan(&id)
-	if err != nil {
-		return 0, err
-	}
-
-	return id, nil
-}
-
-// IncrementID increments the value in the table by 1 and returns the new value.
+// IncrementID увеличивает значение на 1 и возвращает новое значение и ошибку.
 func (dbConnector *DBConnector) IncrementID(ctx context.Context) (int, error) {
 	var newID int
 	err := dbConnector.DB.QueryRowContext(ctx, `
@@ -250,6 +245,8 @@ func (dbConnector *DBConnector) IncrementID(ctx context.Context) (int, error) {
 	return newID, nil
 }
 
+// UpdateDeletedSavedURLBatch обновляет несколько URL в базе данных в рамках одной транзакции, помечая их как удаленные.
+// Если транзакция не удается, возвращает ошибку.
 func (dbConnector *DBConnector) UpdateDeletedSavedURLBatch(ctx context.Context, shortURLs []string, userID int) error {
 	stmt, err := dbConnector.DB.PrepareContext(ctx, `
 		UPDATE urls
