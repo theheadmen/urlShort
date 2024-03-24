@@ -1,4 +1,4 @@
-package main_test
+package main
 
 import (
 	"compress/gzip"
@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 
+	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 	"github.com/theheadmen/urlShort/internal/models"
 	"github.com/theheadmen/urlShort/internal/serverapi"
 	config "github.com/theheadmen/urlShort/internal/serverconfig"
@@ -32,7 +34,11 @@ func testERequest(ts *httptest.Server, method, path string, bodyValue io.Reader,
 		req.AddCookie(cookie)
 	}
 
-	resp, _ := ts.Client().Do(req)
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		resp.Body.Close()
+		return resp, ""
+	}
 	defer resp.Body.Close()
 
 	if resp.Header.Get("Content-Encoding") == "gzip" {
@@ -48,27 +54,14 @@ func testERequest(ts *httptest.Server, method, path string, bodyValue io.Reader,
 	return resp, string(respBody)
 }
 
-func ExamplePostHandler() {
+func ExampleServerDataStore_PostHandler() {
 	configStore := exampleConfigStore()
 	storager := file.NewFileStoragerWithoutReadingData(configStore.FlagFile, false, make(map[storage.URLMapKey]models.SavedURL))
 	ts := httptest.NewServer(serverapi.MakeChiServ(configStore, storager))
 	defer ts.Close()
 
-	testCases := []struct {
-		method       string
-		testValue    string
-		testURL      string
-		expectedCode int
-		expectedBody string
-	}{
-		{method: http.MethodPost, testValue: "", testURL: "", expectedCode: http.StatusCreated, expectedBody: "http://localhost:8080/47DEQpj8"},
-	}
-
-	// Choose a test case that you want to benchmark
-	tc := testCases[0] // For example, the first test case
-
-	testValue := strings.NewReader(tc.testValue)
-	resp, get := testERequest(ts, tc.method, "/"+tc.testURL, testValue, nil)
+	testValue := strings.NewReader("")
+	resp, get := testERequest(ts, http.MethodPost, "/", testValue, nil)
 	defer resp.Body.Close()
 
 	fmt.Println(resp.StatusCode)
@@ -79,78 +72,45 @@ func ExamplePostHandler() {
 	// http://localhost:8080/47DEQpj8
 }
 
-/*
-func BenchmarkTestJsonPost(t *testing.B) {
-	t.ReportAllocs()
+func ExampleServerDataStore_postJSONHandler() {
 	configStore := NewTestConfigStore()
 
-	storager := file.NewFileStoragerWithoutReadingData(configStore.FlagFile, false , make(map[storage.URLMapKey]models.SavedURL))
+	storager := file.NewFileStoragerWithoutReadingData(configStore.FlagFile, false, make(map[storage.URLMapKey]models.SavedURL))
 	ts := httptest.NewServer(serverapi.MakeChiServ(configStore, storager))
 	defer ts.Close()
 
-	testCases := []struct {
-		name         string // добавляем название тестов
-		method       string
-		body         string // добавляем тело запроса в табличные тесты
-		expectedCode int
-		expectedBody string
-	}{
-		{
-			name:         "method_post_success",
-			method:       http.MethodPost,
-			body:         `{"url": "yandex.ru"}`,
-			expectedCode: http.StatusCreated,
-			expectedBody: `{"result":"http://localhost:8080/eeILJFID"}`,
-		},
-	}
-	tc := testCases[0]
+	testValue := strings.NewReader(`{"url": "yandex.ru"}`)
+	resp, get := testERequest(ts, http.MethodPost, "/api/shorten", testValue, nil)
+	defer resp.Body.Close()
 
-	t.ResetTimer() // Reset the timer after the setup is done
+	fmt.Println(resp.StatusCode)
+	fmt.Println(strings.TrimSuffix(string(get), "\n"))
 
-	for i := 0; i < t.N; i++ {
-		testValue := strings.NewReader(tc.body)
-		resp, get := testERequest(ts, tc.method, "/api/shorten", testValue, nil)
-		strings.TrimSuffix(string(get), "\n")
-		resp.Body.Close()
-	}
+	// Output:
+	// 201
+	// {"result":"http://localhost:8080/eeILJFID"}
 }
 
-func BenchmarkTestJsonBatchPost(t *testing.B) {
-	t.ReportAllocs()
+func ExampleServerDataStore_postBatchJSONHandler() {
 	configStore := NewTestConfigStore()
 
-	storager := file.NewFileStoragerWithoutReadingData(configStore.FlagFile, false , make(map[storage.URLMapKey]models.SavedURL))
+	storager := file.NewFileStoragerWithoutReadingData(configStore.FlagFile, false, make(map[storage.URLMapKey]models.SavedURL))
 	ts := httptest.NewServer(serverapi.MakeChiServ(configStore, storager))
 	defer ts.Close()
 
-	testCases := []struct {
-		name         string // добавляем название тестов
-		method       string
-		body         string // добавляем тело запроса в табличные тесты
-		expectedCode int
-		expectedBody string
-	}{
-		{
-			name:         "method_post_success",
-			method:       http.MethodPost,
-			body:         `[{"correlation_id":"u1","original_url":"google.com"},{"correlation_id":"u2","original_url":"ya.ru"}]`,
-			expectedCode: http.StatusCreated,
-			expectedBody: `[{"correlation_id":"u1","short_url":"http://localhost:8080/1MnZAnMm"},{"correlation_id":"u2","short_url":"http://localhost:8080/fE54KN4v"}]`,
-		},
-	}
-	tc := testCases[0]
-	t.ResetTimer() // Reset the timer after the setup is done
+	testValue := strings.NewReader(`[{"correlation_id":"u1","original_url":"google.com"},{"correlation_id":"u2","original_url":"ya.ru"}]`)
+	resp, get := testERequest(ts, http.MethodPost, "/api/shorten/batch", testValue, nil)
+	defer resp.Body.Close()
 
-	for i := 0; i < t.N; i++ {
-		testValue := strings.NewReader(tc.body)
-		resp, get := testERequest(ts, tc.method, "/api/shorten/batch", testValue, nil)
-		strings.TrimSuffix(string(get), "\n")
-		resp.Body.Close()
-	}
+	fmt.Println(resp.StatusCode)
+	fmt.Println(strings.TrimSuffix(string(get), "\n"))
+
+	// Output:
+	// 201
+	// [{"correlation_id":"u1","short_url":"http://localhost:8080/1MnZAnMm"},{"correlation_id":"u2","short_url":"http://localhost:8080/fE54KN4v"}]
 }
 
-func BenchmarkTestSequenceHandler(t *testing.B) {
-	t.ReportAllocs()
+func ExampleServerDataStore_GetHandler() {
 	configStore := NewTestConfigStore()
 
 	testCases := []struct {
@@ -162,99 +122,79 @@ func BenchmarkTestSequenceHandler(t *testing.B) {
 	}
 
 	tc := testCases[0]
-	storager := file.NewFileStoragerWithoutReadingData(configStore.FlagFile, false , make(map[storage.URLMapKey]models.SavedURL))
+	storager := file.NewFileStoragerWithoutReadingData(configStore.FlagFile, false, make(map[storage.URLMapKey]models.SavedURL))
 	dataStore := serverapi.NewServerDataStore(configStore, storager)
 	// тестим последовательно пост + гет запросы
 	body := strings.NewReader(tc.testURL)
 
-	t.ResetTimer() // Reset the timer after the setup is done
+	req1 := httptest.NewRequest("POST", "/", body)
+	req1.AddCookie(serverapi.GetTestCookie())
+	req2 := httptest.NewRequest("GET", "/"+tc.expectedShortURL, nil)
+	req2.AddCookie(serverapi.GetTestCookie())
 
-	for i := 0; i < t.N; i++ {
-		req1 := httptest.NewRequest("POST", "/", body)
-		req1.AddCookie(serverapi.GetTestCookie())
-		req2 := httptest.NewRequest("GET", "/"+tc.expectedShortURL, nil)
-		req2.AddCookie(serverapi.GetTestCookie())
+	// для этого используем два рекордера, по одному для каждого запроса
+	recorder1 := httptest.NewRecorder()
+	recorder2 := httptest.NewRecorder()
 
-		// для этого используем два рекордера, по одному для каждого запроса
-		recorder1 := httptest.NewRecorder()
-		recorder2 := httptest.NewRecorder()
+	handlerFunc := http.HandlerFunc(dataStore.PostHandler)
+	handlerFunc.ServeHTTP(recorder1, req1)
 
-		handlerFunc := http.HandlerFunc(dataStore.PostHandler)
-		handlerFunc.ServeHTTP(recorder1, req1)
+	handlerFunc2 := http.HandlerFunc(dataStore.GetHandler)
+	handlerFunc2.ServeHTTP(recorder2, req2)
 
-		handlerFunc2 := http.HandlerFunc(dataStore.GetHandler)
-		handlerFunc2.ServeHTTP(recorder2, req2)
-	}
+	fmt.Println(recorder2.Code)
+	fmt.Println(recorder2.Header().Get("Location"))
+
+	// Output:
+	// 307
+	// google.com
 }
 
-func BenchmarkTestGenerateShortURL(t *testing.B) {
-	t.ReportAllocs()
-	tests := []struct {
-		name  string
-		value string
-		want  string
-	}{
-		{
-			name:  "simple test #1",
-			value: "google.com",
-			want:  "1MnZAnMm",
-		},
-	}
-	for i := 0; i < t.N; i++ {
-		serverapi.GenerateShortURL(tests[0].value)
-	}
+func ExampleGenerateShortURL() {
+	fmt.Println(serverapi.GenerateShortURL("google.com"))
+	// Output:
+	// 1MnZAnMm
 }
 
-func BenchmarkTestCompressAcceptResponse(t *testing.B) {
-	t.ReportAllocs()
+func ExampleMakeChiServ() {
 	configStore := NewTestConfigStore()
-	storager := file.NewFileStoragerWithoutReadingData(configStore.FlagFile, false , make(map[storage.URLMapKey]models.SavedURL))
+	storager := file.NewFileStoragerWithoutReadingData(configStore.FlagFile, false, make(map[storage.URLMapKey]models.SavedURL))
 	dataStore := serverapi.NewServerDataStore(configStore, storager)
 	r := chi.NewRouter()
 	r.Use(middleware.Compress(5, "text/html", "application/json"))
 	r.Post("/", dataStore.PostHandler)
 
-	t.ResetTimer() // Reset the timer after the setup is done
+	req := httptest.NewRequest("POST", "/", strings.NewReader("google.com"))
+	req.AddCookie(serverapi.GetTestCookie())
+	req.Header.Set("Accept-Encoding", "gzip")
+	w := httptest.NewRecorder()
 
-	for i := 0; i < t.N; i++ {
-		req := httptest.NewRequest("POST", "/", strings.NewReader("google.com"))
-		req.AddCookie(serverapi.GetTestCookie())
-		req.Header.Set("Accept-Encoding", "gzip")
-		w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 
-		r.ServeHTTP(w, req)
+	resp := w.Result()
+	body, _ := io.ReadAll(resp.Body)
 
-		resp := w.Result()
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+	gz, _ := gzip.NewReader(strings.NewReader(string(body)))
+	gz.Close()
+	resp.Body.Close()
 
-		gz, _ := gzip.NewReader(strings.NewReader(string(body)))
-		gz.Close()
+	decompressed, _ := io.ReadAll(gz)
+	fmt.Println(string(decompressed))
 
-		io.ReadAll(gz)
-	}
+	// without compress
+
+	req = httptest.NewRequest("POST", "/", strings.NewReader("google.com"))
+	req.AddCookie(serverapi.GetTestCookie())
+	w = httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	resp = w.Result()
+	body2, _ := io.ReadAll(resp.Body)
+	fmt.Println(string(body2))
+	resp.Body.Close()
+
+	// Output:
+	// http://localhost:8080/1MnZAnMm
+	// http://localhost:8080/1MnZAnMm
 }
-
-func BenchmarkTestCompressWithoutAcceptResponse(t *testing.B) {
-	t.ReportAllocs()
-	configStore := NewTestConfigStore()
-	storager := file.NewFileStoragerWithoutReadingData(configStore.FlagFile, false , make(map[storage.URLMapKey]models.SavedURL))
-	dataStore := serverapi.NewServerDataStore(configStore, storager)
-	r := chi.NewRouter()
-	r.Use(middleware.Compress(5, "text/html", "application/json"))
-	r.Post("/", dataStore.PostHandler)
-
-	t.ResetTimer() // Reset the timer after the setup is done
-
-	for i := 0; i < t.N; i++ {
-		req := httptest.NewRequest("POST", "/", strings.NewReader("google.com"))
-		req.AddCookie(serverapi.GetTestCookie())
-		w := httptest.NewRecorder()
-
-		r.ServeHTTP(w, req)
-
-		resp := w.Result()
-		io.ReadAll(resp.Body)
-		resp.Body.Close()
-	}
-}*/
