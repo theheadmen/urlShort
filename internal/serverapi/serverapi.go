@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +21,8 @@ import (
 	config "github.com/theheadmen/urlShort/internal/serverconfig"
 	"github.com/theheadmen/urlShort/internal/storage"
 	"go.uber.org/zap"
+
+	jsoniter "github.com/json-iterator/go"
 )
 
 const (
@@ -39,6 +40,7 @@ type UserClaims struct {
 type ServerDataStore struct {
 	configStore config.ConfigStore
 	storager    storage.Storage
+	json        jsoniter.API
 }
 
 // NewServerDataStore создает новый экземпляр ServerDataStore с заданными конфигурацией и хранилищем.
@@ -46,6 +48,7 @@ func NewServerDataStore(configStore *config.ConfigStore, storager storage.Storag
 	return &ServerDataStore{
 		configStore: *configStore,
 		storager:    storager,
+		json:        jsoniter.ConfigCompatibleWithStandardLibrary,
 	}
 }
 
@@ -147,7 +150,7 @@ func (dataStore *ServerDataStore) PostHandler(w http.ResponseWriter, r *http.Req
 // сохраняет его в хранилище и возвращает ответ с кодом статуса и сокращенным URL.
 func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http.Request) {
 	var req models.Request
-	dec := json.NewDecoder(r.Body)
+	dec := dataStore.json.NewDecoder(r.Body)
 	if err := dec.Decode(&req); err != nil {
 		logger.Log.Error("cannot decode request JSON body", zap.Error(err))
 		w.WriteHeader(http.StatusUnprocessableEntity)
@@ -191,8 +194,7 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 
 	logger.Log.Info("After POST JSON batch request", zap.String("body", req.URL), zap.String("result", servShortURL+"/"+shortURL), zap.Int("userID", userID), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
 
-	enc := json.NewEncoder(w)
-	if err := enc.Encode(resp); err != nil {
+	if err := dataStore.json.NewEncoder(w).Encode(resp); err != nil {
 		logger.Log.Error("error encoding response", zap.Error(err))
 		return
 	}
@@ -203,7 +205,7 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 // сохраняет их в хранилище и возвращает ответ с кодом статуса и сокращенными URL.
 func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r *http.Request) {
 	var req []models.BatchRequest
-	dec := json.NewDecoder(r.Body)
+	dec := dataStore.json.NewDecoder(r.Body)
 	if err := dec.Decode(&req); err != nil {
 		logger.Log.Error("cannot decode request JSON body", zap.Error(err))
 		w.WriteHeader(http.StatusUnprocessableEntity)
@@ -254,8 +256,7 @@ func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r 
 
 	logger.Log.Info("After POST JSON request", zap.Int("count", len(resp)), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
 
-	enc := json.NewEncoder(w)
-	if err := enc.Encode(resp); err != nil {
+	if err := dataStore.json.NewEncoder(w).Encode(resp); err != nil {
 		logger.Log.Error("error encoding response", zap.Error(err))
 		return
 	}
@@ -301,8 +302,7 @@ func (dataStore *ServerDataStore) getByUserIDHandler(w http.ResponseWriter, r *h
 
 	logger.Log.Info("After POST JSON request", zap.Int("count", len(resp)), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
 
-	enc := json.NewEncoder(w)
-	if err := enc.Encode(resp); err != nil {
+	if err := dataStore.json.NewEncoder(w).Encode(resp); err != nil {
 		logger.Log.Error("error encoding response", zap.Error(err))
 		return
 	}
@@ -512,7 +512,7 @@ func (dataStore *ServerDataStore) deleteByUserIDHandler(w http.ResponseWriter, r
 	}
 	defer r.Body.Close()
 
-	err = json.Unmarshal(body, &slice)
+	err = dataStore.json.Unmarshal(body, &slice)
 	if err != nil {
 		logger.Log.Error("cannot decode request JSON body", zap.Error(err), zap.String("body", string(body)))
 		w.WriteHeader(http.StatusUnprocessableEntity)

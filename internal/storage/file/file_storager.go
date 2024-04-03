@@ -4,7 +4,6 @@ package file
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
@@ -13,6 +12,8 @@ import (
 	"github.com/theheadmen/urlShort/internal/models"
 	"github.com/theheadmen/urlShort/internal/storage"
 	"go.uber.org/zap"
+
+	jsoniter "github.com/json-iterator/go"
 )
 
 // FileStorage реализует интерфейс Storage для хранения данных в файле.
@@ -23,6 +24,7 @@ type FileStorage struct {
 	mu          sync.RWMutex
 	lastUserID  int
 	usedUserIDs []int
+	json        jsoniter.API
 }
 
 // NewFileStorage создает новый экземпляр FileStorage и читает данные из файла.
@@ -36,6 +38,7 @@ func NewFileStorage(filePath string, isWithFile bool, URLMap map[storage.URLMapK
 		mu:          sync.RWMutex{},
 		lastUserID:  0,
 		usedUserIDs: empty,
+		json:        jsoniter.ConfigCompatibleWithStandardLibrary,
 	}
 	err := storager.ReadAllData(ctx)
 	if err != nil {
@@ -53,6 +56,7 @@ func NewFileStoragerWithoutReadingData(filePath string, isWithFile bool, URLMap 
 		mu:          sync.RWMutex{},
 		lastUserID:  1,
 		usedUserIDs: []int{1},
+		json:        jsoniter.ConfigCompatibleWithStandardLibrary,
 	}
 }
 
@@ -76,7 +80,7 @@ func (storager *FileStorage) ReadAllData(ctx context.Context) error {
 
 	for scanner.Scan() {
 		var result models.SavedURL
-		err := json.Unmarshal([]byte(scanner.Text()), &result)
+		err := storager.json.Unmarshal([]byte(scanner.Text()), &result)
 		if err != nil {
 			logger.Log.Error("Failed unmarshal data", zap.Error(err))
 		}
@@ -116,7 +120,7 @@ func (storager *FileStorage) ReadAllDataForUserID(ctx context.Context, userID in
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var result models.SavedURL
-		err := json.Unmarshal([]byte(scanner.Text()), &result)
+		err := storager.json.Unmarshal([]byte(scanner.Text()), &result)
 		if err != nil {
 			logger.Log.Error("Failed unmarshal data", zap.Error(err))
 		}
@@ -188,7 +192,7 @@ func (storager *FileStorage) StoreURLBatch(ctx context.Context, forStore []model
 
 // Save сохраняет URL в файл.
 func (storager *FileStorage) Save(savedURL models.SavedURL) error {
-	savedURLJSON, err := json.Marshal(savedURL)
+	savedURLJSON, err := storager.json.Marshal(savedURL)
 	if err != nil {
 		logger.Log.Error("Failed to marshal new data", zap.Error(err))
 		return err
