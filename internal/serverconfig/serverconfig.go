@@ -1,3 +1,4 @@
+// Package config содержит определения структур используемых в приложении для конфигурации
 package config
 
 import (
@@ -5,6 +6,7 @@ import (
 	"os"
 )
 
+// ConfigStore структура с всеми используемыми флагами
 type ConfigStore struct {
 	FlagRunAddr      string
 	FlagShortRunAddr string
@@ -13,6 +15,7 @@ type ConfigStore struct {
 	FlagDB           string
 }
 
+// NewConfigStore возвращает ConfigStore с пустыми значениями всех флагов
 func NewConfigStore() *ConfigStore {
 	return &ConfigStore{
 		FlagRunAddr:      "",

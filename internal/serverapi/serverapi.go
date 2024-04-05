@@ -1,3 +1,4 @@
+// Package serverapi хранит структуры и хендлеры для работы сервера
 package serverapi
 
 import (
@@ -5,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +21,8 @@ import (
 	config "github.com/theheadmen/urlShort/internal/serverconfig"
 	"github.com/theheadmen/urlShort/internal/storage"
 	"go.uber.org/zap"
+
+	jsoniter "github.com/json-iterator/go"
 )
 
 const (
@@ -28,24 +30,30 @@ const (
 	jwtCookieKey = "token"
 )
 
-// UserClaims is a custom JWT claims structure
+// UserClaims кастомная JWT структура
 type UserClaims struct {
 	UserID string `json:"userID"`
 	jwt.RegisteredClaims
 }
 
+// ServerDataStore структура храняющая конфигурацию и выбранный тип хранилища для работы сервера
 type ServerDataStore struct {
 	configStore config.ConfigStore
 	storager    storage.Storage
+	json        jsoniter.API
 }
 
+// NewServerDataStore создает новый экземпляр ServerDataStore с заданными конфигурацией и хранилищем.
 func NewServerDataStore(configStore *config.ConfigStore, storager storage.Storage) *ServerDataStore {
 	return &ServerDataStore{
 		configStore: *configStore,
 		storager:    storager,
+		json:        jsoniter.ConfigCompatibleWithStandardLibrary,
 	}
 }
 
+// MakeChiServ создает новый экземпляр Chi-маршрутизатора и настраивает необходимые middleware.
+// Он также определяет маршруты и их обработчики для сервера.
 func MakeChiServ(configStore *config.ConfigStore, storager storage.Storage) chi.Router {
 	dataStore := NewServerDataStore(configStore, storager)
 	router := chi.NewRouter()
@@ -81,6 +89,9 @@ func MakeChiServ(configStore *config.ConfigStore, storager storage.Storage) chi.
 	return router
 }
 
+// PostHandler обрабатывает POST-запросы для сокращения URL.
+// Он читает тело запроса, декодирует его (если необходимо), генерирует сокращенный URL,
+// сохраняет его в хранилище и возвращает ответ с кодом статуса и сокращенным URL.
 func (dataStore *ServerDataStore) PostHandler(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -134,9 +145,12 @@ func (dataStore *ServerDataStore) PostHandler(w http.ResponseWriter, r *http.Req
 	fmt.Fprintf(w, servShortURL+"/%s", shortURL)
 }
 
+// postJSONHandler обрабатывает POST-запросы в формате JSON для сокращения URL.
+// Он декодирует тело запроса в формате JSON, генерирует сокращенный URL,
+// сохраняет его в хранилище и возвращает ответ с кодом статуса и сокращенным URL.
 func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http.Request) {
 	var req models.Request
-	dec := json.NewDecoder(r.Body)
+	dec := dataStore.json.NewDecoder(r.Body)
 	if err := dec.Decode(&req); err != nil {
 		logger.Log.Error("cannot decode request JSON body", zap.Error(err))
 		w.WriteHeader(http.StatusUnprocessableEntity)
@@ -180,16 +194,18 @@ func (dataStore *ServerDataStore) postJSONHandler(w http.ResponseWriter, r *http
 
 	logger.Log.Info("After POST JSON batch request", zap.String("body", req.URL), zap.String("result", servShortURL+"/"+shortURL), zap.Int("userID", userID), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
 
-	enc := json.NewEncoder(w)
-	if err := enc.Encode(resp); err != nil {
+	if err := dataStore.json.NewEncoder(w).Encode(resp); err != nil {
 		logger.Log.Error("error encoding response", zap.Error(err))
 		return
 	}
 }
 
+// postBatchJSONHandler обрабатывает POST-запросы в формате JSON для сокращения нескольких URL.
+// Он декодирует тело запроса в формате JSON, генерирует сокращенные URL,
+// сохраняет их в хранилище и возвращает ответ с кодом статуса и сокращенными URL.
 func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r *http.Request) {
 	var req []models.BatchRequest
-	dec := json.NewDecoder(r.Body)
+	dec := dataStore.json.NewDecoder(r.Body)
 	if err := dec.Decode(&req); err != nil {
 		logger.Log.Error("cannot decode request JSON body", zap.Error(err))
 		w.WriteHeader(http.StatusUnprocessableEntity)
@@ -240,13 +256,15 @@ func (dataStore *ServerDataStore) postBatchJSONHandler(w http.ResponseWriter, r 
 
 	logger.Log.Info("After POST JSON request", zap.Int("count", len(resp)), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
 
-	enc := json.NewEncoder(w)
-	if err := enc.Encode(resp); err != nil {
+	if err := dataStore.json.NewEncoder(w).Encode(resp); err != nil {
 		logger.Log.Error("error encoding response", zap.Error(err))
 		return
 	}
 }
 
+// getByUserIDHandler обрабатывает GET-запросы для получения всех сохраненных URL пользователя.
+// Он извлекает идентификатор пользователя из токена, получает сохраненные URL из хранилища,
+// и возвращает их в формате JSON.
 func (dataStore *ServerDataStore) getByUserIDHandler(w http.ResponseWriter, r *http.Request) {
 	token, userID, err := getTokenAndUserID(r)
 	if err != nil || !token.Valid {
@@ -284,13 +302,15 @@ func (dataStore *ServerDataStore) getByUserIDHandler(w http.ResponseWriter, r *h
 
 	logger.Log.Info("After POST JSON request", zap.Int("count", len(resp)), zap.String("content-encoding", r.Header.Get("Content-Encoding")))
 
-	enc := json.NewEncoder(w)
-	if err := enc.Encode(resp); err != nil {
+	if err := dataStore.json.NewEncoder(w).Encode(resp); err != nil {
 		logger.Log.Error("error encoding response", zap.Error(err))
 		return
 	}
 }
 
+// GetHandler обрабатывает GET-запросы для получения полного URL по сокращенному URL.
+// Он извлекает сокращенный URL из запроса, получает полный URL из хранилища,
+// и перенаправляет пользователя на исходный URL или возвращает ошибку, если URL не найден.
 func (dataStore *ServerDataStore) GetHandler(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/")
 	originalSavedURL, ok, err := dataStore.storager.GetURLForAnyUserID(r.Context(), id)
@@ -318,6 +338,7 @@ func (dataStore *ServerDataStore) GetHandler(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
 
+// pingHandler проверяет состояние сервера и возвращает ответ с кодом статуса.
 func (dataStore *ServerDataStore) pingHandler(w http.ResponseWriter, r *http.Request) {
 	err := dataStore.storager.PingContext(r.Context())
 	if err != nil {
@@ -329,12 +350,15 @@ func (dataStore *ServerDataStore) pingHandler(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusOK)
 }
 
+// GenerateShortURL генерирует сокращенный URL на основе исходного URL.
 func GenerateShortURL(url string) string {
 	hash := sha256.Sum256([]byte(url))
 	encoded := base64.RawURLEncoding.EncodeToString(hash[:])
 	return encoded[:8]
 }
 
+// authMiddleware проверяет наличие и валидность токена в запросе.
+// Если токен недействителен или отсутствует, он устанавливает новый токен в ответе.
 func (dataStore *ServerDataStore) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Get the JWT from the cookie
@@ -383,6 +407,7 @@ func (dataStore *ServerDataStore) authMiddleware(next http.Handler) http.Handler
 	})
 }
 
+// getTokenAndUserID извлекает токен из запроса и извлекает идентификатор пользователя из токена.
 func getTokenAndUserID(r *http.Request) (*jwt.Token, int, error) {
 	claims := &UserClaims{}
 	cookie, err := r.Cookie(jwtCookieKey)
@@ -445,6 +470,7 @@ func setUserIDCookie(w http.ResponseWriter, r *http.Request, userID string) {
 	http.SetCookie(w, newCookie)
 }
 
+// GetTestCookie создает тестовый http.Cookie для использования в тестах.
 func GetTestCookie() *http.Cookie {
 	userID := "1"
 	claims := UserClaims{
@@ -465,6 +491,9 @@ func GetTestCookie() *http.Cookie {
 	}
 }
 
+// deleteByUserIDHandler обрабатывает DELETE-запросы для удаления всех сохраненных URL пользователя.
+// Он извлекает идентификатор пользователя из токена, удаляет сохраненные URL из хранилища,
+// и возвращает ответ с кодом статуса.
 func (dataStore *ServerDataStore) deleteByUserIDHandler(w http.ResponseWriter, r *http.Request) {
 	token, userID, err := getTokenAndUserID(r)
 	if err != nil || !token.Valid {
@@ -483,7 +512,7 @@ func (dataStore *ServerDataStore) deleteByUserIDHandler(w http.ResponseWriter, r
 	}
 	defer r.Body.Close()
 
-	err = json.Unmarshal(body, &slice)
+	err = dataStore.json.Unmarshal(body, &slice)
 	if err != nil {
 		logger.Log.Error("cannot decode request JSON body", zap.Error(err), zap.String("body", string(body)))
 		w.WriteHeader(http.StatusUnprocessableEntity)

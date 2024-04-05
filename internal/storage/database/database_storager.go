@@ -1,3 +1,4 @@
+// Package database предоставляет реализацию хранилища данных, которая использует базу данных для хранения данных.
 package database
 
 import (
@@ -11,6 +12,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// DatabaseStorage реализует интерфейс Storage для хранения данных в базе данных.
 type DatabaseStorage struct {
 	URLMap      map[storage.URLMapKey]models.SavedURL
 	mu          sync.RWMutex
@@ -19,6 +21,7 @@ type DatabaseStorage struct {
 	usedUserIDs []int
 }
 
+// NewDatabaseStorage создает новый экземпляр DatabaseStorage и читает данные из базы данных.
 func NewDatabaseStorage(URLMap map[storage.URLMapKey]models.SavedURL, dbConnector *dbconnector.DBConnector, ctx context.Context) *DatabaseStorage {
 	var empty []int
 
@@ -36,6 +39,7 @@ func NewDatabaseStorage(URLMap map[storage.URLMapKey]models.SavedURL, dbConnecto
 	return storager
 }
 
+// ReadAllData читает все данные из базы данных и заполняет их в DatabaseStorage.
 func (storager *DatabaseStorage) ReadAllData(ctx context.Context) error {
 	urls, err := storager.DB.SelectAllSavedURLs(ctx)
 	if err != nil {
@@ -51,6 +55,7 @@ func (storager *DatabaseStorage) ReadAllData(ctx context.Context) error {
 	return err
 }
 
+// ReadAllDataForUserID читает все данные для определенного пользователя из базы данных.
 func (storager *DatabaseStorage) ReadAllDataForUserID(ctx context.Context, userID int) ([]models.SavedURL, error) {
 	urls, err := storager.DB.SelectSavedURLsForUserID(ctx, userID)
 	if err != nil {
@@ -61,7 +66,7 @@ func (storager *DatabaseStorage) ReadAllDataForUserID(ctx context.Context, userI
 	return urls, err
 }
 
-// возвращает true если это значение уже было записано ранее
+// StoreURL сохраняет URL в DatabaseStorage и базу данных.
 func (storager *DatabaseStorage) StoreURL(ctx context.Context, shortURL string, originalURL string, userID int) (bool, error) {
 	_, ok, err := storager.GetURL(ctx, shortURL, userID)
 	if err != nil {
@@ -86,6 +91,7 @@ func (storager *DatabaseStorage) StoreURL(ctx context.Context, shortURL string, 
 	return false, err
 }
 
+// StoreURLBatch сохраняет несколько URL в DatabaseStorage и базу данных.
 func (storager *DatabaseStorage) StoreURLBatch(ctx context.Context, forStore []models.SavedURL, userID int) error {
 	var filteredStore []models.SavedURL
 	for _, savedURL := range forStore {
@@ -109,6 +115,7 @@ func (storager *DatabaseStorage) StoreURLBatch(ctx context.Context, forStore []m
 	return nil
 }
 
+// GetURL возвращает URL из DatabaseStorage.
 func (storager *DatabaseStorage) GetURL(ctx context.Context, shortURL string, userID int) (string, bool, error) {
 	savedURLs, err := storager.DB.SelectSavedURLsForShortURLAndUserID(ctx, shortURL, userID)
 	if err != nil {
@@ -123,6 +130,7 @@ func (storager *DatabaseStorage) GetURL(ctx context.Context, shortURL string, us
 	}
 }
 
+// GetURLForAnyUserID возвращает URL, независимо от пользователя.
 func (storager *DatabaseStorage) GetURLForAnyUserID(ctx context.Context, shortURL string) (models.SavedURL, bool, error) {
 	savedURLs, err := storager.DB.SelectSavedURLsForShortURL(ctx, shortURL)
 	if err != nil {
@@ -137,6 +145,7 @@ func (storager *DatabaseStorage) GetURLForAnyUserID(ctx context.Context, shortUR
 	}
 }
 
+// IsItCorrectUserID проверяет, является ли идентификатор пользователя корректным.
 func (storager *DatabaseStorage) IsItCorrectUserID(userID int) bool {
 	storager.mu.RLock()
 	ok := storager.findUserID(userID)
@@ -145,6 +154,7 @@ func (storager *DatabaseStorage) IsItCorrectUserID(userID int) bool {
 	return ok
 }
 
+// findUserID ищет пользователя по заданному ID
 func (storager *DatabaseStorage) findUserID(userID int) bool {
 	for _, usedUserID := range storager.usedUserIDs {
 		if usedUserID == userID {
@@ -154,6 +164,7 @@ func (storager *DatabaseStorage) findUserID(userID int) bool {
 	return false
 }
 
+// GetLastUserID возвращает последний использованный идентификатор пользователя.
 func (storager *DatabaseStorage) GetLastUserID(ctx context.Context) (int, error) {
 	lastUserID, err := storager.DB.IncrementID(ctx)
 	if err != nil {
@@ -165,17 +176,20 @@ func (storager *DatabaseStorage) GetLastUserID(ctx context.Context) (int, error)
 	return lastUserID, nil
 }
 
+// SaveUserID сохраняет идентификатор пользователя.
 func (storager *DatabaseStorage) SaveUserID(userID int) {
 	storager.mu.Lock()
 	storager.usedUserIDs = append(storager.usedUserIDs, userID)
 	storager.mu.Unlock()
 }
 
+// DeleteByUserID удаляет URL, принадлежащие определенному пользователю.
 func (storager *DatabaseStorage) DeleteByUserID(ctx context.Context, shortURLs []string, userID int) error {
 	err := storager.DB.UpdateDeletedSavedURLBatch(ctx, shortURLs, userID)
 	return err
 }
 
+// PingContext проверяет соединение с хранилищем.
 func (storager *DatabaseStorage) PingContext(ctx context.Context) error {
 	err := storager.DB.DB.PingContext(ctx)
 	if err != nil {
