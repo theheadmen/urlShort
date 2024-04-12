@@ -15,28 +15,41 @@ import (
 var exitCheckAnalyzer = &analysis.Analyzer{
 	Name: "exitCheck",
 	Doc:  "check for direct use of os.Exit in the main function of the main package",
-	Run: func(pass *analysis.Pass) (interface{}, error) {
-		for _, file := range pass.Files {
-			if file.Name.Name == "main" {
-				ast.Inspect(file, func(node ast.Node) bool {
-					if mainFunc, ok := node.(*ast.FuncDecl); ok && mainFunc.Name.Name == "main" {
-						ast.Inspect(mainFunc, func(node ast.Node) bool {
-							if call, ok := node.(*ast.CallExpr); ok {
-								if fun, ok := call.Fun.(*ast.SelectorExpr); ok {
-									if ident, ok := fun.X.(*ast.Ident); ok && ident.Name == "os" && fun.Sel.Name == "Exit" {
-										pass.Reportf(call.Pos(), "direct use of os.Exit in main function of main package is not allowed")
-									}
-								}
-							}
-							return true
-						})
-					}
-					return true
-				})
+	Run:  exitCheckAnalyzerRun,
+}
+
+func exitCheckAnalyzerRun(pass *analysis.Pass) (interface{}, error) {
+	for _, file := range pass.Files {
+		if file.Name.Name == "main" {
+			ast.Inspect(file, func(node ast.Node) bool {
+				if mainFunc, ok := node.(*ast.FuncDecl); ok && mainFunc.Name.Name == "main" {
+					inspectMainFunc(pass, mainFunc)
+				}
+				return true
+			})
+		}
+	}
+	return nil, nil
+}
+
+func inspectMainFunc(pass *analysis.Pass, mainFunc *ast.FuncDecl) {
+	ast.Inspect(mainFunc, func(node ast.Node) bool {
+		if call, ok := node.(*ast.CallExpr); ok {
+			if isExitCall(call) {
+				pass.Reportf(call.Pos(), "direct use of os.Exit in main function of main package is not allowed")
 			}
 		}
-		return nil, nil
-	},
+		return true
+	})
+}
+
+func isExitCall(call *ast.CallExpr) bool {
+	if fun, ok := call.Fun.(*ast.SelectorExpr); ok {
+		if ident, ok := fun.X.(*ast.Ident); ok && ident.Name == "os" && fun.Sel.Name == "Exit" {
+			return true
+		}
+	}
+	return false
 }
 
 // Запустите multichecker, указав путь к файлам, которые вы хотите проверить. Например:
