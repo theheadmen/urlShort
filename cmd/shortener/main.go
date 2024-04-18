@@ -60,8 +60,14 @@ func main() {
 	}
 
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Log.Info("Server is down", zap.String("error", err.Error()))
+		if configStore.FlagLTS {
+			if err := server.ListenAndServeTLS("cert.pem", "key.pem"); err != nil && err != http.ErrServerClosed {
+				logger.Log.Info("Server is down", zap.String("error", err.Error()))
+			}
+		} else {
+			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Log.Info("Server is down", zap.String("error", err.Error()))
+			}
 		}
 	}()
 

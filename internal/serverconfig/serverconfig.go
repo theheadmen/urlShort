@@ -13,6 +13,7 @@ type ConfigStore struct {
 	FlagLogLevel     string
 	FlagFile         string
 	FlagDB           string
+	FlagLTS          bool
 }
 
 // NewConfigStore возвращает ConfigStore с пустыми значениями всех флагов
@@ -23,6 +24,7 @@ func NewConfigStore() *ConfigStore {
 		FlagLogLevel:     "",
 		FlagFile:         "",
 		FlagDB:           "",
+		FlagLTS:          false,
 	}
 }
 
@@ -36,6 +38,7 @@ func (configStore *ConfigStore) ParseFlags() {
 	flag.StringVar(&configStore.FlagLogLevel, "l", "debug", "log level")
 	flag.StringVar(&configStore.FlagFile, "f", "/tmp/short-url-db.json", "file with saved urls")
 	flag.StringVar(&configStore.FlagDB, "d", "", "params to connect with DB")
+	flag.BoolVar(&configStore.FlagLTS, "s", false, "use LTS")
 	// парсим переданные серверу аргументы в зарегистрированные переменные
 	flag.Parse()
 
