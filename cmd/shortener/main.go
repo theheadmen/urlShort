@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,9 +19,17 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	buildVersion string = "N/A"
+	buildDate    string = "N/A"
+	buildCommit  string = "N/A"
+)
+
 // для локального теста с бд
 // go run . -a ":8081" -b "http://localhost:8081" -d "host=localhost port=5432 user=postgres password=example dbname=godb sslmode=disable"
 func main() {
+	fmt.Printf("Build version:=%s\n, Build date:=%s\n, Build commit:=%s\n", buildVersion, buildDate, buildCommit)
+
 	configStore := config.NewConfigStore()
 	configStore.ParseFlags()
 
