@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/theheadmen/urlShort/internal/dbconnector"
 	"github.com/theheadmen/urlShort/internal/logger"
@@ -34,7 +35,7 @@ func main() {
 	configStore.ParseFlags()
 
 	// создадим контекст который можно отменить
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
 	defer stop()
 
 	if err := logger.Initialize(configStore.FlagLogLevel); err != nil {
@@ -73,4 +74,15 @@ func main() {
 
 	// блокируем пока контекст не завершится, тем или иным путем
 	<-ctx.Done()
+
+	// Создаем контекст с таймаутом
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Пытаемся закрыть сервер с использованием контекста
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		logger.Log.Info("Server forced to shutdown", zap.String("error", err.Error()))
+	}
+
+	logger.Log.Info("Server exiting")
 }
