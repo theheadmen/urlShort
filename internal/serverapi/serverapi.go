@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -86,6 +87,7 @@ func MakeChiServ(configStore *config.ConfigStore, storager storage.Storage) chi.
 	router.Post("/api/shorten/batch", dataStore.postBatchJSONHandler)
 	router.Get("/api/user/urls", dataStore.getByUserIDHandler)
 	router.Delete("/api/user/urls", dataStore.deleteByUserIDHandler)
+	router.Get("/api/internal/stats", dataStore.getStats)
 	return router
 }
 
@@ -535,4 +537,35 @@ func (dataStore *ServerDataStore) deleteByUserIDHandler(w http.ResponseWriter, r
 	}()
 
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// getStats проверяет, отправлен ли запрос из доверенной сети и, если это верно, возвращает количество обработанных URL и пользователей
+func (dataStore *ServerDataStore) getStats(w http.ResponseWriter, r *http.Request) {
+	trustedSubnet := dataStore.configStore.FlagTrustedSubnet
+	if trustedSubnet == "" {
+		http.Error(w, "Access is forbidden", http.StatusForbidden)
+		return
+	}
+
+	clientIP := net.ParseIP(r.Header.Get("X-Real-IP"))
+	_, subnet, _ := net.ParseCIDR(trustedSubnet)
+	if !subnet.Contains(clientIP) {
+		http.Error(w, "Access is forbidden", http.StatusForbidden)
+		return
+	}
+
+	stats, err := dataStore.storager.GetStats(r.Context())
+	if err != nil {
+		logger.Log.Error("cannot read data", zap.Error(err))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := dataStore.json.NewEncoder(w).Encode(stats); err != nil {
+		logger.Log.Error("error encoding response", zap.Error(err))
+		return
+	}
 }

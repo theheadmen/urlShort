@@ -37,3 +37,9 @@ type BatchByUserIDResponse struct {
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
 }
+
+// StatsResponse представляет собой структуру для пакетного ответа с количеством URL и Users обработанных сервером.
+type StatsResponse struct {
+	URLs  int `json:"urls"`
+	Users int `json:"users"`
+}

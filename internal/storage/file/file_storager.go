@@ -65,8 +65,8 @@ func NewFileStoragerWithoutReadingData(filePath string, isWithFile bool, URLMap 
 		isWithFile:  isWithFile,
 		URLMap:      URLMap,
 		mu:          sync.RWMutex{},
-		lastUserID:  1,
-		usedUserIDs: []int{1},
+		lastUserID:  0,
+		usedUserIDs: []int{},
 		json:        jsoniter.ConfigCompatibleWithStandardLibrary,
 	}
 }
@@ -322,4 +322,19 @@ func (storager *FileStorage) DeleteByUserID(ctx context.Context, shortURLs []str
 func (storager *FileStorage) PingContext(ctx context.Context) error {
 	logger.Log.Info("db is not alive, we don't need to ping")
 	return fmt.Errorf("db is not alive, we don't need to ping")
+}
+
+func (storager *FileStorage) GetStats(ctx context.Context) (models.StatsResponse, error) {
+	uniqueShortURLs := make(map[string]bool) // Используем map для отслеживания уникальных ShortURL
+
+	for key := range storager.URLMap {
+		uniqueShortURLs[key.ShortURL] = true // Добавляем каждый ShortURL в map
+	}
+
+	stats := models.StatsResponse{
+		URLs:  len(uniqueShortURLs), // Возвращаем количество ключей в map, которые являются уникальными ShortURL
+		Users: len(storager.usedUserIDs),
+	}
+
+	return stats, nil
 }

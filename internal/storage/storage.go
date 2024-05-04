@@ -44,4 +44,7 @@ type Storage interface {
 
 	// PingContext проверяет соединение с хранилищем.
 	PingContext(ctx context.Context) error
+
+	// GetStats возвращает данные URLs и Users если запрос отправляется из доверяемой сети
+	GetStats(ctx context.Context) (models.StatsResponse, error)
 }

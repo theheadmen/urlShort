@@ -2,6 +2,7 @@ package main
 
 import (
 	"compress/gzip"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -29,12 +30,15 @@ func NewTestConfigStore() *config.ConfigStore {
 	}
 }
 
-func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyValue io.Reader, cookie *http.Cookie) (*http.Response, string) {
+func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyValue io.Reader, cookie *http.Cookie, realIP string) (*http.Response, string, models.StatsResponse) {
 	req, err := http.NewRequest(method, ts.URL+path, bodyValue)
 	require.NoError(t, err)
 
 	if cookie != nil {
 		req.AddCookie(cookie)
+	}
+	if realIP != "" {
+		req.Header.Set("X-Real-IP", realIP)
 	}
 
 	resp, err := ts.Client().Do(req)
@@ -48,13 +52,25 @@ func testRequest(t *testing.T, ts *httptest.Server, method, path string, bodyVal
 		respBody, err := io.ReadAll(gz)
 		require.NoError(t, err)
 
-		return resp, string(respBody)
+		return resp, string(respBody), models.StatsResponse{}
+	}
+
+	if realIP != "" {
+		// если пытаться парсить то, чего нет - будет ненужная ошибка
+		if resp.StatusCode == http.StatusOK {
+			var stats models.StatsResponse
+			err := json.NewDecoder(resp.Body).Decode(&stats)
+			require.NoError(t, err)
+			return resp, "", stats
+		} else {
+			return resp, "", models.StatsResponse{}
+		}
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 
-	return resp, string(respBody)
+	return resp, string(respBody), models.StatsResponse{}
 }
 
 func TestSimpleHandler(t *testing.T) {
@@ -82,7 +98,7 @@ func TestSimpleHandler(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.method, func(t *testing.T) {
 			testValue := strings.NewReader(tc.testValue)
-			resp, get := testRequest(t, ts, tc.method, "/"+tc.testURL, testValue, nil)
+			resp, get, _ := testRequest(t, ts, tc.method, "/"+tc.testURL, testValue, nil, "")
 			defer resp.Body.Close()
 
 			assert.Equal(t, tc.expectedCode, resp.StatusCode, "Код ответа не совпадает с ожидаемым")
@@ -156,7 +172,7 @@ func TestJsonPost(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.method, func(t *testing.T) {
 			testValue := strings.NewReader(tc.body)
-			resp, get := testRequest(t, ts, tc.method, "/api/shorten", testValue, nil)
+			resp, get, _ := testRequest(t, ts, tc.method, "/api/shorten", testValue, nil, "")
 			get = strings.TrimSuffix(string(get), "\n")
 			defer resp.Body.Close()
 
@@ -225,7 +241,7 @@ func TestJsonBatchPost(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.method, func(t *testing.T) {
 			testValue := strings.NewReader(tc.body)
-			resp, get := testRequest(t, ts, tc.method, "/api/shorten/batch", testValue, nil)
+			resp, get, _ := testRequest(t, ts, tc.method, "/api/shorten/batch", testValue, nil, "")
 			get = strings.TrimSuffix(string(get), "\n")
 			defer resp.Body.Close()
 
@@ -380,4 +396,42 @@ func TestCompressResponse(t *testing.T) {
 
 		assert.Equal(t, "http://localhost:8080/1MnZAnMm", string(body), "Тело ответа не совпадает с ожидаемым")
 	})
+}
+
+func TestStatsHandler(t *testing.T) {
+	configStore := NewTestConfigStore()
+	configStore.FlagTrustedSubnet = "192.168.0.0/16"
+	// конкретно здесь нам абсолютно наплевать на конкретные данные, мы хотим проверить только количество
+	URLMap := make(map[storage.URLMapKey]models.SavedURL)
+	URLMap[storage.URLMapKey{ShortURL: "1", UserID: 1}] = models.SavedURL{UUID: 1, ShortURL: "1", OriginalURL: "1", UserID: 1, Deleted: false}
+
+	storager := file.NewFileStoragerWithoutReadingData(configStore.FlagFile, false /*isWithFile*/, URLMap)
+	ts := httptest.NewServer(serverapi.MakeChiServ(configStore, storager))
+	defer ts.Close()
+
+	testCases := []struct {
+		realIP        string
+		expectedCode  int
+		expectedURLs  int
+		expectedUsers int
+	}{
+		{realIP: "192.168.1.10", expectedCode: http.StatusOK, expectedURLs: 1, expectedUsers: 1},
+		{realIP: "10.0.0.1", expectedCode: http.StatusForbidden, expectedURLs: 0, expectedUsers: 0},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.realIP, func(t *testing.T) {
+			testValue := strings.NewReader("")
+			resp, _, stats := testRequest(t, ts, http.MethodGet, "/api/internal/stats", testValue, nil, tc.realIP)
+			defer resp.Body.Close()
+
+			assert.Equal(t, tc.expectedCode, resp.StatusCode, "Код ответа не совпадает с ожидаемым")
+			if tc.expectedURLs != 0 {
+				assert.Equal(t, tc.expectedURLs, stats.URLs, "Тело ответа (URLs) не совпадает с ожидаемым")
+			}
+			if tc.expectedUsers != 0 {
+				assert.Equal(t, tc.expectedUsers, stats.Users, "Тело ответа (Users) не совпадает с ожидаемым")
+			}
+		})
+	}
 }

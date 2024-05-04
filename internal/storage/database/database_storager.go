@@ -197,3 +197,26 @@ func (storager *DatabaseStorage) PingContext(ctx context.Context) error {
 	}
 	return err
 }
+
+func (storager *DatabaseStorage) GetStats(ctx context.Context) (models.StatsResponse, error) {
+	urls, err := storager.DB.SelectAllSavedURLs(ctx)
+	if err != nil {
+		logger.Log.Error("Failed to read from database", zap.Error(err))
+		return models.StatsResponse{}, err
+	}
+
+	uniqueShortURLs := make(map[string]bool) // Используем map для отслеживания уникальных ShortURL
+	uniqueUsers := make(map[int]bool)        // Используем map для отслеживания уникальных ShortURL
+
+	for _, key := range urls {
+		uniqueShortURLs[key.ShortURL] = true // Добавляем каждый ShortURL в map
+		uniqueUsers[key.UserID] = true       // Добавляем каждого User в map
+	}
+
+	stats := models.StatsResponse{
+		URLs:  len(uniqueShortURLs),
+		Users: len(uniqueUsers),
+	}
+
+	return stats, nil
+}
