@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/theheadmen/urlShort/internal/dbconnector"
+	"github.com/theheadmen/urlShort/internal/grpcserver"
 	"github.com/theheadmen/urlShort/internal/logger"
 	"github.com/theheadmen/urlShort/internal/models"
 	"github.com/theheadmen/urlShort/internal/serverapi"
@@ -60,8 +61,16 @@ func main() {
 	}
 
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Log.Info("Server is down", zap.String("error", err.Error()))
+		if configStore.FlagGRPC {
+			grpcserver.MakeAndRunServer(storager, *configStore)
+		} else if configStore.FlagLTS {
+			if err := server.ListenAndServeTLS("cert.pem", "key.pem"); err != nil && err != http.ErrServerClosed {
+				logger.Log.Info("Server is down", zap.String("error", err.Error()))
+			}
+		} else {
+			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Log.Info("Server is down", zap.String("error", err.Error()))
+			}
 		}
 	}()
 

@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package urlshortener;
+
+option go_package = "github.com/theheadmen/urlShort";
+
+message Request {
+    string url = 1;
+}
+
+message Response {
+    string result = 1;
+}
+
+message SavedURL {
+    string short_url = 1;
+    string original_url = 2;
+    int32 user_id = 3;
+    bool deleted = 4;
+}
+
+message BatchRequest {
+    string correlation_id = 1;
+    string original_url = 2;
+}
+
+message BatchResponse {
+    string correlation_id = 1;
+    string short_url = 2;
+}
+
+message BatchByUserIDResponse {
+    string short_url = 1;
+    string original_url = 2;
+}
+
+message StatsResponse {
+    int32 urls = 1;
+    int32 users = 2;
+}
+
+service URLShortenerService {
+    rpc ShortenURL(Request) returns (Response);
+    rpc GetURL(Request) returns (Response);
+    rpc ShortenURLBatch(stream BatchRequest) returns (stream BatchResponse);
+    rpc GetURLsByUserID(Request) returns (stream BatchByUserIDResponse);
+    rpc DeleteURLs(stream Request) returns (Response);
+    rpc GetStats(Request) returns (StatsResponse);
+}

@@ -17,6 +17,7 @@ type ConfigStore struct {
 	FlagLTS           bool   `json:"enable_https"`
 	FlagConfig        string `json:"-"`
 	FlagTrustedSubnet string `json:"trusted_subnet"`
+	FlagGRPC          bool   `json:"enable_grpc"`
 }
 
 // NewConfigStore возвращает ConfigStore с пустыми значениями всех флагов
@@ -30,6 +31,7 @@ func NewConfigStore() *ConfigStore {
 		FlagLTS:           false,
 		FlagConfig:        "",
 		FlagTrustedSubnet: "",
+		FlagGRPC:          false,
 	}
 }
 
@@ -67,6 +69,7 @@ func (configStore *ConfigStore) ParseFlags() {
 	flag.StringVar(&configStore.FlagConfig, "c", "", "path to config file")
 	flag.StringVar(&configStore.FlagConfig, "config", "", "path to config file")
 	flag.StringVar(&configStore.FlagTrustedSubnet, "t", flagTrustedSubnetDef, "trusted subnet")
+	flag.BoolVar(&configStore.FlagGRPC, "g", false, "use GRPC")
 	// парсим переданные серверу аргументы в зарегистрированные переменные
 	flag.Parse()
 
@@ -95,6 +98,9 @@ func (configStore *ConfigStore) ParseFlags() {
 		}
 		if configStore.FlagTrustedSubnet == flagTrustedSubnetDef {
 			configStore.FlagTrustedSubnet = tempConfig.FlagDB
+		}
+		if !configStore.FlagGRPC {
+			configStore.FlagGRPC = tempConfig.FlagGRPC
 		}
 	}
 

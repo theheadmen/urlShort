@@ -24,16 +24,16 @@ type Storage interface {
 	// StoreURL сохраняет URL в хранилище.
 	StoreURL(ctx context.Context, shortURL string, originalURL string, userID int) (bool, error)
 
-	// StoreURLBatch сохраняет несколько URL в хранилище.
+	// StoreURLBatch сохраняет несколько URLs forStore в хранилище.
 	StoreURLBatch(ctx context.Context, forStore []models.SavedURL, userID int) error
 
 	// GetLastUserID получает последний использованный идентификатор пользователя.
 	GetLastUserID(ctx context.Context) (int, error)
 
-	// DeleteByUserID удаляет URL, принадлежащие определенному пользователю.
+	// DeleteByUserID удаляет URLs из shortURLs, принадлежащие определенному пользователю.
 	DeleteByUserID(ctx context.Context, shortURLs []string, userID int) error
 
-	// GetURLForAnyUserID получает URL, независимо от пользователя.
+	// GetURLForAnyUserID получает URL по shortURL, независимо от пользователя.
 	GetURLForAnyUserID(ctx context.Context, shortURL string) (models.SavedURL, bool, error)
 
 	// IsItCorrectUserID проверяет, является ли идентификатор пользователя корректным.
