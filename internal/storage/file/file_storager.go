@@ -115,6 +115,16 @@ func (storager *FileStorage) ReadAllData(ctx context.Context) error {
 // ReadAllDataForUserID читает все данные для определенного пользователя из файла.
 func (storager *FileStorage) ReadAllDataForUserID(ctx context.Context, userID int) ([]models.SavedURL, error) {
 	filteredData := []models.SavedURL{}
+	if !storager.isWithFile {
+		for key, data := range storager.URLMap {
+			if key.UserID == userID {
+				filteredData = append(filteredData, data)
+			}
+		}
+
+		return filteredData, nil
+	}
+
 	// Read from file
 	file, err := os.Open(storager.filePath)
 	if err != nil {

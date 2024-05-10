@@ -90,7 +90,6 @@ func (s *grpcServer) ShortenURLBatch(stream pb.URLShortenerService_ShortenURLBat
 }
 
 func (s *grpcServer) GetURLsByUserID(in *pb.Request, stream pb.URLShortenerService_GetURLsByUserIDServer) error {
-	// Implement the logic to get URLs by user ID
 	userID, ok := stream.Context().Value(models.UserIDCredentials{}).(int)
 	if !ok {
 		return status.Error(codes.Internal, "cannot get userID from creds")
@@ -120,7 +119,6 @@ func (s *grpcServer) DeleteURLs(stream pb.URLShortenerService_DeleteURLsServer) 
 		return status.Error(codes.Internal, "cannot get userID from creds")
 	}
 
-	// Implement the logic to delete URLs
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
@@ -130,7 +128,6 @@ func (s *grpcServer) DeleteURLs(stream pb.URLShortenerService_DeleteURLsServer) 
 			return status.Errorf(codes.Internal, "cannot read data from stream: %v", err)
 		}
 
-		// Delete the URL
 		err = s.storage.DeleteByUserID(stream.Context(), []string{req.Url}, userID)
 		if err != nil {
 			return status.Errorf(codes.Internal, "cannot delete data from stream: %v", err)
@@ -159,7 +156,6 @@ func (s *grpcServer) GetStats(ctx context.Context, in *pb.Request) (*pb.StatsRes
 		return nil, status.Error(codes.PermissionDenied, "access is forbidden")
 	}
 
-	// Implement the logic to get stats
 	stats, err := s.storage.GetStats(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "cannot get stats: %v", err)
@@ -167,63 +163,76 @@ func (s *grpcServer) GetStats(ctx context.Context, in *pb.Request) (*pb.StatsRes
 	return &pb.StatsResponse{Urls: int32(stats.URLs), Users: int32(stats.Users)}, nil
 }
 
+func makeNewCtxWithUserID(ctx context.Context, storage storage.Storage) (context.Context, error) {
+	// If metadata is not provided, generate a new userID
+	userID, err := storage.GetLastUserID(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get last userID: %v", err)
+	}
+
+	claims := serverapi.UserClaims{
+		UserID: strconv.Itoa(userID),
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			Issuer:    "myServer",
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	// Sign and get the complete encoded token as a string using the secret
+	signedToken, err := token.SignedString([]byte(jwtSecretKey))
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "internal Server Error: %v", err)
+	}
+
+	md := metadata.Pairs("authorization", signedToken)
+	ctx = metadata.NewIncomingContext(ctx, md)
+	ctx = metadata.NewOutgoingContext(ctx, md)
+	ctx = context.WithValue(ctx, models.UserIDCredentials{}, userID)
+
+	return ctx, nil
+}
+
+func makeNewCtxByMetada(ctx context.Context, storage storage.Storage, md metadata.MD) (context.Context, error) {
+	authHeader, ok := md["authorization"]
+	if !ok {
+		return nil, status.Errorf(codes.Unauthenticated, "authorization token is not provided")
+	}
+
+	// Expecting: Bearer <token>
+	tokenParts := strings.Split(authHeader[0], " ")
+	if len(tokenParts) != 2 || strings.ToLower(tokenParts[0]) != "bearer" {
+		return nil, status.Errorf(codes.Unauthenticated, "authorization header is malformed")
+	}
+
+	token := tokenParts[1]
+	userID, err := authenticate(token, storage)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "authentication failed: %v", err)
+	}
+
+	// Add userID to the context
+	ctx = context.WithValue(ctx, models.UserIDCredentials{}, userID)
+	return ctx, nil
+}
+
 // UnaryServerInterceptor returns a new unary grpcServer interceptor for authentication.
 func UnaryServerInterceptor(storage storage.Storage) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		md, ok := metadata.FromIncomingContext(ctx)
 		if !ok {
-			md, ok = metadata.FromOutgoingContext(ctx)
-			if !ok {
-				// If metadata is not provided, generate a new userID
-				userID, err := storage.GetLastUserID(ctx)
-				if err != nil {
-					return nil, status.Errorf(codes.Internal, "failed to get last userID: %v", err)
-				}
-
-				claims := serverapi.UserClaims{
-					UserID: strconv.Itoa(userID),
-					RegisteredClaims: jwt.RegisteredClaims{
-						ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
-						Issuer:    "myServer",
-					},
-				}
-				token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-				// Sign and get the complete encoded token as a string using the secret
-				signedToken, err := token.SignedString([]byte(jwtSecretKey))
-				if err != nil {
-					return nil, status.Errorf(codes.Internal, "internal Server Error: %v", err)
-				}
-				// Add userID to the context
-
-				md := metadata.Pairs("authorization", signedToken)
-				ctx = metadata.NewIncomingContext(ctx, md)
-				ctx = metadata.NewOutgoingContext(ctx, md)
-
-				ctx = context.WithValue(ctx, models.UserIDCredentials{}, userID)
-				return handler(ctx, req)
+			ctx, err := makeNewCtxWithUserID(ctx, storage)
+			if err != nil {
+				return nil, err
 			}
+
+			return handler(ctx, req)
 		}
 
-		authHeader, ok := md["authorization"]
-		if !ok {
-			return nil, status.Errorf(codes.Unauthenticated, "authorization token is not provided")
-		}
-
-		// Expecting: Bearer <token>
-		tokenParts := strings.Split(authHeader[0], " ")
-		if len(tokenParts) != 2 || strings.ToLower(tokenParts[0]) != "bearer" {
-			return nil, status.Errorf(codes.Unauthenticated, "authorization header is malformed")
-		}
-
-		token := tokenParts[1]
-		userID, err := authenticate(token, storage)
+		ctx, err := makeNewCtxByMetada(ctx, storage, md)
 		if err != nil {
-			return nil, status.Errorf(codes.Unauthenticated, "authentication failed: %v", err)
+			return nil, err
 		}
-
-		// Add userID to the context
-		ctx = context.WithValue(ctx, models.UserIDCredentials{}, userID)
 
 		return handler(ctx, req)
 	}
@@ -233,60 +242,21 @@ func StreamServerInterceptor(storage storage.Storage) grpc.StreamServerIntercept
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		md, ok := metadata.FromIncomingContext(ss.Context())
 		if !ok {
-			md, ok = metadata.FromOutgoingContext(ss.Context())
-			if !ok {
-				// If metadata is not provided, generate a new userID
-				userID, err := storage.GetLastUserID(ss.Context())
-				if err != nil {
-					return status.Errorf(codes.Internal, "failed to get last userID: %v", err)
-				}
-
-				claims := serverapi.UserClaims{
-					UserID: strconv.Itoa(userID),
-					RegisteredClaims: jwt.RegisteredClaims{
-						ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
-						Issuer:    "myServer",
-					},
-				}
-				token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-				// Sign and get the complete encoded token as a string using the secret
-				signedToken, err := token.SignedString([]byte(jwtSecretKey))
-				if err != nil {
-					return status.Errorf(codes.Internal, "internal Server Error: %v", err)
-				}
-				// Add userID to the context
-
-				md := metadata.Pairs("authorization", signedToken)
-				ctx := metadata.NewIncomingContext(ss.Context(), md)
-				ctx = metadata.NewOutgoingContext(ctx, md)
-
-				ctx = context.WithValue(ctx, models.UserIDCredentials{}, userID)
-				wrapped := grpc_middleware.WrapServerStream(ss)
-				wrapped.WrappedContext = ctx
-				return handler(srv, wrapped)
+			ctx, err := makeNewCtxWithUserID(ss.Context(), storage)
+			if err != nil {
+				return err
 			}
+
+			wrapped := grpc_middleware.WrapServerStream(ss)
+			wrapped.WrappedContext = ctx
+			return handler(srv, wrapped)
 		}
 
-		authHeader, ok := md["authorization"]
-		if !ok {
-			return status.Errorf(codes.Unauthenticated, "authorization token is not provided")
-		}
-
-		// Expecting: Bearer <token>
-		tokenParts := strings.Split(authHeader[0], " ")
-		if len(tokenParts) != 2 || strings.ToLower(tokenParts[0]) != "bearer" {
-			return status.Errorf(codes.Unauthenticated, "authorization header is malformed")
-		}
-
-		token := tokenParts[1]
-		userID, err := authenticate(token, storage)
+		ctx, err := makeNewCtxByMetada(ss.Context(), storage, md)
 		if err != nil {
-			return status.Errorf(codes.Unauthenticated, "authentication failed: %v", err)
+			return err
 		}
 
-		// Add userID to the context
-		ctx := context.WithValue(ss.Context(), models.UserIDCredentials{}, userID)
 		wrapped := grpc_middleware.WrapServerStream(ss)
 		wrapped.WrappedContext = ctx
 		return handler(srv, wrapped)

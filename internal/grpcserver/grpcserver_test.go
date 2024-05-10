@@ -45,6 +45,7 @@ func init() {
 	lis = bufconn.Listen(bufSize)
 	s := grpc.NewServer(
 		grpc.UnaryInterceptor(UnaryServerInterceptor(storager)),
+		grpc.StreamInterceptor(StreamServerInterceptor(storager)),
 	)
 	pb.RegisterURLShortenerServiceServer(s, &grpcServer{
 		// You need to provide a mock or stub implementation of the storage interface here
@@ -93,7 +94,6 @@ func TestGRPCServer(t *testing.T) {
 	signedToken, err := token.SignedString([]byte(jwtSecretKey))
 	require.NoError(t, err)
 	jwtCreds := &jwtCreds{token: signedToken}
-	// Add userID to the context
 
 	md := metadata.Pairs("authorization", signedToken)
 	ctx = context.WithValue(ctx, models.UserIDCredentials{}, userID)
@@ -136,6 +136,7 @@ func TestGRPCServer(t *testing.T) {
 			require.NoError(t, err)
 			resp, err := stream.Recv()
 			require.NoError(t, err)
+			// конкретные значения проверяем в основном тесте
 			assert.NotEmpty(t, resp.ShortUrl)
 		}
 	})
@@ -144,6 +145,11 @@ func TestGRPCServer(t *testing.T) {
 		stream, err := client.GetURLsByUserID(ctx, &pb.Request{})
 		require.NoError(t, err)
 		resp, err := stream.Recv()
+		require.NoError(t, err)
+		// конкретные значения проверяем в основном тесте
+		assert.NotEmpty(t, resp.ShortUrl)
+		assert.NotEmpty(t, resp.OriginalUrl)
+		resp, err = stream.Recv()
 		require.NoError(t, err)
 		assert.NotEmpty(t, resp.ShortUrl)
 		assert.NotEmpty(t, resp.OriginalUrl)
